@@ -1,0 +1,13 @@
+---
+
+- name: var files
+  template:
+    src: get-dockerhub-images.cfg.j2
+    dest: "{{ dir_base }}/get-dockerhub-images.cfg"
+    mode: 0775
+
+- name: template get-dockerhub-images
+  template:
+    src: get-dockerhub-images.sh.j2
+    dest: "{{ dir_base }}/get-dockerhub-images.sh"
+    mode: 0775
