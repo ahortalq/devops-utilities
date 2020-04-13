@@ -1,0 +1,147 @@
+---
+
+- name: create pentaho user
+  user:
+    name: pentaho
+    shell: /bin/bash
+    home: /opt/pentaho
+    createhome: yes
+    generate_ssh_key: yes
+    password: $6$7Zn.zUN4r6RW535J$Cy3iJHWv5dCx1YI9BUOKFpCSW4YjGHWXsmszFWfvB4roTO.40ywRxWHa3SVAJDNI939rcwi43cgaLRfO6b10t0
+  become: true
+
+- name: install apt packages
+  apt:
+    name: "{{ item }}"
+    update_cache: yes
+    cache_valid_time: 3600
+  with_items:
+    - default-jre
+    - unzip
+  become: true
+
+- name: verify pentaho-server exists
+  stat:
+    path: /opt/pentaho/pentaho-server
+  register: pentaho_server_unzipped
+
+- name: extract pentaho-server
+  unarchive:
+    src: https://downloads.sourceforge.net/project/pentaho/Business%20Intelligence%20Server/7.1/pentaho-server-ce-7.1.0.0-12.zip
+    dest: /opt/pentaho
+    remote_src: yes
+  become: true
+  become_user: pentaho
+  when: not pentaho_server_unzipped.stat.exists
+
+- name: create kettle directory
+  file:
+    path: /opt/pentaho/.kettle
+    state: directory
+    mode: 0755
+  become: true
+  become_user: pentaho
+
+- name: generate kettle.properties
+  template:
+    src: kettle.properties.j2
+    dest: /opt/pentaho/.kettle/kettle.properties
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+- name: copy quartz.properties
+  copy:
+    src: quartz.properties
+    dest: /opt/pentaho/pentaho-server/pentaho-solutions/system/quartz/quartz.properties
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+- name: copy hibernate-settings.xml
+  copy:
+    src: hibernate-settings.xml
+    dest: /opt/pentaho/pentaho-server/pentaho-solutions/system/hibernate/hibernate-settings.xml
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+- name: copy mysql5.hibernate.cfg.xml
+  template:
+    src: mysql5.hibernate.cfg.xml.j2
+    dest: /opt/pentaho/pentaho-server/pentaho-solutions/system/hibernate/mysql5.hibernate.cfg.xml
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+- name: copy audit_sql.xml
+  copy:
+    src: audit_sql.xml
+    dest: /opt/pentaho/pentaho-server/pentaho-solutions/system/audit_sql.xml
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+# El fichero DEV-31 es para la versión 7.1 de Pentaho. Para la versión 8.0 quitar el prefijo
+- name: copy ImportHandlerMimeTypeDefinitions.xml
+  copy:
+    src: DEV-31-ImportHandlerMimeTypeDefinitions.xml
+    dest: /opt/pentaho/pentaho-server/pentaho-solutions/system/ImportHandlerMimeTypeDefinitions.xml
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+- name: copy repository.xml jackrabbit
+  template:
+    src: repository.xml.j2
+    dest: /opt/pentaho/pentaho-server/pentaho-solutions/system/jackrabbit/repository.xml
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+- name: copy context.xml tomcat
+  template:
+    src: context.xml.j2
+    dest: /opt/pentaho/pentaho-server/tomcat/webapps/pentaho/META-INF/context.xml
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+- name: copy pentaho templates
+  copy:
+    src: "{{ item }}"
+    dest: "/opt/pentaho/pentaho-server/pentaho-solutions/system/pentaho-cdf/{{ item }}"
+    mode: '0664'
+  with_items:
+    - template-dashboard-vocento.html
+    - template-dashboard-vocento-require.html
+    - template-dashboard-vocento-ss.html
+    - template-dashboard-vocento-ss-require.html
+    - template-dashboard-vocento-monitor.html
+    - template-dashboard-vocento-monitor-require.html
+    - template-dashboard-vocento-servicedesk.html
+    - template-dashboard-vocento-servicedesk-require.html
+    - template-dashboard-vocento-servicedesk-by-team.html
+    - template-dashboard-vocento-servicedesk-by-team-require.html
+  become: true
+  become_user: pentaho
+
+- name: copy mongodb driver
+  copy:
+    src: mongo-java-driver-3.5.0.jar
+    dest: /opt/pentaho/pentaho-server/tomcat/lib
+    mode: '0664'
+  become: true
+  become_user: pentaho
+
+- name: import jenkin SSL certificates
+  java_cert:
+    cert_url: "{{ item }}"
+    cert_port: 443
+    keystore_path: /etc/ssl/certs/java/cacerts
+    keystore_pass: changeit
+    state: present
+  with_items:
+    - jenkins.srv.vocento.in
+    - jenkins2.srv.vocento.in
+  become: true

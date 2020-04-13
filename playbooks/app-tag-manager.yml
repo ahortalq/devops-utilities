@@ -1,0 +1,21 @@
+---
+
+- hosts: localhost
+  connection: local
+  tasks:
+  - name: Obtenemos la url de los distintos artefactos a desplegar
+    uri:
+      url: "{{ url_get_artifact_versions }}/{{ application }}/{{ version }}/"
+      return_content: yes
+    register: artifacts_urls
+
+- hosts: "{{ entorno }}:&javascript:&app-squido"
+  vars:
+    artifact_url: "{{ hostvars['localhost']['artifacts_urls'].json['vocento.ansible:ar-borrar'] }}"
+  roles:
+    - { role: deploy-artifact, entorno: "{{ entorno }}" }
+
+- hosts: localhost
+  connection: local
+  roles:
+    - { role: update-maturity-level, entorno: "{{ entorno }}", application: "{{ application }}", version: "{{ version }}" }

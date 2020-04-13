@@ -1,0 +1,10 @@
+---
+dir_base: /jenkins2/workspace/devops-utilities
+dir_work: /tmp
+dir_log: /jenkins2/workspace/devops-utilities
+mvn_command: /bin/mvn
+git_command: /bin/git
+npm_command: /usr/bin/npm
+protocol_pds: http
+host_pds: pds.srv.vocento.in
+port_pds: 80

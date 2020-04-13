@@ -1,0 +1,13 @@
+---
+dir_base: /jenkins2/workspace/devops-utilities
+dir_work: /tmp
+dir_log: /jenkins2/workspace/devops-utilities
+protocol_pds: https
+host_pds: pds.srv.vocento.in
+port_pds: 443
+# Estas variables no estan definidas para el entorno development
+# El objetivo es que se adecuen ciertas variables cuando se ejecuta
+# el playbook en la maquina de control de Jenkins
+is_production: true
+ansible_config: ${HOME}/ansible/ansible.cfg
+inventory: ${HOME}/ansible/inventory.py

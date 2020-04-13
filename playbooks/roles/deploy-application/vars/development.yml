@@ -1,0 +1,7 @@
+---
+dir_base: /opt/vocento/devops-utilities
+dir_work: /var/opt/vocento
+dir_log: /var/log/vocento
+protocol_pds: http
+host_pds: localhost
+port_pds: 8000

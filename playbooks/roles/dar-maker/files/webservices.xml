@@ -1,0 +1,52 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.xebialabs.dar.congruencias</groupId>
+    <artifactId>webservices</artifactId>
+    <version>VERSION_DAR</version>
+    <packaging>dar</packaging> <!-- DAR packaging -->
+
+    <properties>
+        <com.xebialabs.congruencias.webservices.version>1.0.0</com.xebialabs.congruencias.webservices.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.xebialabs.congruencias</groupId>
+            <artifactId>webservices</artifactId>
+            <version>${com.xebialabs.congruencias.webservices.version}</version>
+            <type>aar</type>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.xebialabs.deployit</groupId>
+                <artifactId>maven-deployit-plugin</artifactId>
+                <version>4.5.2</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <deploymentPackageProperties>
+                        <application>Applications/Webservices/webservices</application>
+                    </deploymentPackageProperties>
+                    <serverAddress>localhost</serverAddress>
+                    <port>4516</port>
+                    <username>admin</username>
+                    <password>2001jcla</password>
+
+
+                    <deployables>
+
+                        <file.File name="webservices" groupId="com.xebialabs.congruencias" artifactId="webservices">
+                            <targetFileName>webservices.aar</targetFileName>
+                            <targetPath>{{axis2.services.directory}}</targetPath>
+                            <checksum>${com.xebialabs.congruencias.webservices.version}</checksum>
+                        </file.File>
+                    </deployables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,32 @@
+---
+
+- name: Cargamos las variables del entorno {{ entorno }}
+  include_vars: "{{ entorno }}.yml"
+
+- name: create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - "{{ dir_base }}"
+    - "{{ dir_base }}/yamls"
+    - "{{ dir_work }}/yaml-maker"
+    - "{{ dir_work }}/yaml-maker/yamls-cfg-files"
+    - "{{ dir_log }}"
+
+- name: var files
+  template:
+    src: yaml-maker.cfg.j2
+    dest: "{{ dir_base }}/yaml-maker.cfg"
+    mode: 0775
+
+- name: template yaml-maker
+  template:
+    src: yaml-maker.sh.j2
+    dest: "{{ dir_base }}/yaml-maker.sh"
+    mode: 0775
+
+- name: copy yamls files
+  copy:
+    src: "files/"
+    dest: "{{ dir_base }}/yamls"

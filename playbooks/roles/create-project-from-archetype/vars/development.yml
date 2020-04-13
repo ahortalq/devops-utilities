@@ -1,0 +1,6 @@
+---
+dir_base: /opt/vocento/devops-utilities
+dir_work: /var/opt/vocento
+dir_log: /var/log/vocento
+mvn_command: /usr/bin/mvn
+git_command: /usr/bin/git

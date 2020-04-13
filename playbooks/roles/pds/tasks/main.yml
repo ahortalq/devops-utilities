@@ -1,0 +1,121 @@
+---
+
+- name: Cargamos las variables del entorno {{ entorno }}
+  include_vars: "{{ entorno }}.yml"
+
+- name: install apt packages
+  apt:
+    name: "{{ item }}"
+    update_cache: yes
+    cache_valid_time: 3600
+  with_items:
+    - nginx
+    - git
+    - python-pip
+    - virtualenv
+    - libmysqlclient-dev
+    - python3-dev
+    - supervisor
+  become: true
+- name: create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: ubuntu
+    group: www-data
+  with_items:
+    - /etc/nginx/ssl
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
+    - "{{ logs_uwsgi }}"
+    - "{{ logs_directory }}"
+    - "{{ proj_path_src }}"
+    - "{{ proj_path_venv }}"
+    - "{{ proj_path_conf }}"
+  become: true
+- name: copy TLS key
+  copy:
+    src: nginx.key
+    dest: /etc/nginx/ssl/nginx.key
+    mode: 0600
+  notify: restart supervisor
+- name: copy TLS certificate
+  copy:
+    src: nginx.crt
+    dest: /etc/nginx/ssl/nginx.crt
+  notify: restart supervisor
+- name: copy pds config file for nginx
+  template:
+    src: pds_nginx.conf.j2
+    dest: /etc/nginx/sites-available/pds_nginx.conf
+  notify: restart supervisor
+- name: enable pds configuration
+  file:
+    src: /etc/nginx/sites-available/pds_nginx.conf
+    dest: /etc/nginx/sites-enabled/pds_nginx.conf
+    state: link
+  notify: restart supervisor
+- name: disable default file configuration
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: restart supervisor
+- name: check out the repository on the host
+  git:
+    repo: "{{ repo_git_url }}"
+    dest: "{{ proj_path_src }}"
+    accept_hostkey: yes
+  notify: restart supervisor
+- name: install requirement packages
+  pip:
+    requirements: "{{ proj_path_src }}/requirements.txt"
+    virtualenv: "{{ proj_path_venv }}"
+    virtualenv_python: python3.5
+  notify: restart supervisor
+- name: install certificates
+  blockinfile:
+    block: "{{ lookup('file', 'py_certificates.crt') }}"
+    dest: "{{ proj_path_venv }}/lib/python3.5/site-packages/certifi/cacert.pem"
+  notify: restart supervisor
+- name: generate local_settings.py
+  template:
+    src: local_settings.py.j2
+    dest: "{{ proj_path_src }}/{{ proj_name }}/local_settings.py"
+  notify: restart supervisor
+- name: apply migrations, collect static content
+  django_manage:
+    command: "{{ item }}"
+    app_path: "{{ proj_path_src }}"
+    virtualenv: "{{ proj_path_venv }}"
+  with_items:
+    - migrate
+    - collectstatic
+    - loaddata GitBranchNames
+    - loaddata StateApplicationVersion
+    - loaddata StateArtifactVersion
+- name: set the uwsgi config file
+  template:
+    src: "{{ proj_name }}_uwsgi.ini.j2"
+    dest: "{{ proj_path_conf }}/{{ proj_name }}_uwsgi.ini"
+  notify: restart supervisor
+- name: set the supervisor config file
+  template:
+    src: "supervisor_server.conf.j2"
+    dest: "/etc/supervisor/conf.d/supervisor_server.conf"
+  become: true
+  notify: restart supervisor
+- name: copy uwsgi_params
+  copy:
+    src: uwsgi_params
+    dest: "{{ proj_path_conf }}"
+  notify: restart supervisor
+- name: service supervisor start
+  service:
+    name: supervisor
+    state: started
+  become: true
+- name: creating cron entry
+  cron:
+    name: "recycle artifats from nexus"
+    minute: "0"
+    job: "{{ proj_path_venv }}/bin/python {{ proj_path_src }}/manage.py recycle"

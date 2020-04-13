@@ -1,0 +1,28 @@
+---
+
+- hosts: localhost
+  connection: local
+  tasks:
+  - name: Obtenemos las versiones de los distintos artefactos
+    uri:
+      url: "{{ url_get_artifact_versions }}/{{ application }}/{{ version }}/"
+      return_content: yes
+    register: artifacts_versions
+  - set_fact:
+      version_artifact: "{{ artifacts_versions.json['vocento.wordpress.larioja'] }}"
+
+- hosts: localhost
+  connection: local
+  roles:
+    - { role: download-artifact-nexus, groupId: vocento.wordpress, artifactId: larioja, version_artifact: "{{ hostvars['localhost']['version_artifact'] }}", extension: zip }
+
+- hosts: "{{ entorno }}:&wordpress:&larioja"
+  vars:
+    version_artifact: "{{ hostvars['localhost']['version_artifact'] }}"
+  roles:
+    - { role: deploy-local-artifact, entorno: "{{ entorno }}", groupId: vocento.wordpress, artifactId: larioja, extension: zip }
+
+- hosts: localhost
+  connection: local
+  roles:
+    - { role: update-maturity-level, entorno: "{{ entorno }}", application: "{{ application }}", version: "{{ version }}" }

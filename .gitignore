@@ -1,0 +1,4 @@
+.vscode/settings.json
+playbooks/roles/dar-maker/.vscode/settings.json
+playbooks/roles/yaml-maker/.vscode/settings.json
+settings.json

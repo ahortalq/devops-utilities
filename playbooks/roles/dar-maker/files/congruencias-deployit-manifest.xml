@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<udm.DeploymentPackage version="VERSION_DAR" application="congruencias">
+  <application />
+  <orchestrator />
+  <satisfiesOkTestManager>false</satisfiesOkTestManager>
+  <satisfiesOkReleaseManager>false</satisfiesOkReleaseManager>
+  <deployables>
+    <smoketest.HttpRequestTest name="/smokeTest">
+      <tags />
+      <url>{{smoke.test.url}}</url>
+      <expectedResponseText>Bienvenido a la calculadora</expectedResponseText>
+      <headers />
+    </smoketest.HttpRequestTest>
+    <wlp.ConnectionManagerSpec name="/dbConnectionManager">
+      <tags />
+      <maxPoolSize>20</maxPoolSize>
+      <minPoolSize>10</minPoolSize>
+    </wlp.ConnectionManagerSpec>
+    <sql.SqlScripts name="/schemabdd" file="/schemabdd-SCHEMABDD_VERSION.zip">
+      <tags />
+      <scanPlaceholders>true</scanPlaceholders>
+      <preScannedPlaceholders>true</preScannedPlaceholders>
+      <placeholders />
+      <checksum>SCHEMABDD_VERSION</checksum>
+    </sql.SqlScripts>
+    <wlp.LibrarySpec name="/dbLibrary">
+      <tags />
+      <filesetRef>dbFileset</filesetRef>
+    </wlp.LibrarySpec>
+    <wlp.WebApplicationSpec name="/webapp" file="/webapp-WEBAPP_VERSION.war">
+      <tags />
+      <scanPlaceholders>true</scanPlaceholders>
+      <preScannedPlaceholders>true</preScannedPlaceholders>
+      <placeholders>
+        <value>url.webservices</value>
+      </placeholders>
+      <checksum>WEBAPP_VERSION</checksum>
+      <location>congruencias.war</location>
+      <contextRoot>congruencias</contextRoot>
+      <classloader />
+      <applicationBindings />
+    </wlp.WebApplicationSpec>
+    <wlp.GenericDataSourceSpec name="/dbDatasource">
+      <tags />
+      <jndiName>jdbc/CongruenciasDB</jndiName>
+      <jdbcDriverRef>dbDriver</jdbcDriverRef>
+      <connectionManagerRef>dbConnectionManager</connectionManagerRef>
+      <url>{{bdd.url}}</url>
+      <user>{{bdd.user}}</user>
+      <password>{{bdd.pass}}</password>
+    </wlp.GenericDataSourceSpec>
+    <wlp.FilesetSpec name="/dbFileset">
+      <tags />
+      <dir>/usr/share/java/mysql-connector-java-8.0.12.jar</dir>
+    </wlp.FilesetSpec>
+    <wlp.JdbcDriverSpec name="/dbDriver">
+      <tags />
+      <libraryRef>dbLibrary</libraryRef>
+      <xaDataSource>com.mysql.jdbc.Driver</xaDataSource>
+    </wlp.JdbcDriverSpec>
+  </deployables>
+  <applicationDependencies>
+    <entry key="webservices">[1.6.0-B1,1.6.0-B99]</entry>
+  </applicationDependencies>
+  <dependencyResolution>LATEST</dependencyResolution>
+  <undeployDependencies>false</undeployDependencies>
+  <templates />
+  <boundTemplates />
+</udm.DeploymentPackage>

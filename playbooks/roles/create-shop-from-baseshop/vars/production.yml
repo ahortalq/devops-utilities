@@ -1,0 +1,5 @@
+---
+dir_base: /jenkins2/workspace/devops-utilities
+dir_work: /tmp
+dir_log: /jenkins2/workspace/devops-utilities
+git_command: /bin/git

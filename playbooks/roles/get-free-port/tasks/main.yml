@@ -1,0 +1,23 @@
+---
+
+- name: Cargamos las variables del entorno {{ entorno }}
+  include_vars: "{{ entorno }}.yml"
+
+- name: create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - "{{ dir_base }}"
+
+- name: copy file get free port
+  copy:
+    src: get-free-port.sh
+    dest: "{{ dir_base }}/get-free-port.sh"
+    mode: 0775
+
+- name: copy file npm test
+  copy:
+    src: npm-test.sh
+    dest: "{{ dir_base }}/npm-test.sh"
+    mode: 0775

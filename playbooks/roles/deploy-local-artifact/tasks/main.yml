@@ -1,0 +1,23 @@
+---
+
+- name: Cargamos las variables del fichero {{ vars_file }}
+  include_vars: "{{ vars_file }}"
+
+- name: Limpiamos los directorios de destino para asegurar un despliegue limpio
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items: "{{ remote_directories }}"
+
+- name: Creamos los directorios en remoto antes de ubicar los artefactos
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items: "{{ remote_directories }}"
+
+- name: Descomprimimos el contenido del zip en remoto
+  unarchive:
+    src: /tmp/{{ artifactId }}-{{ artifact_version }}.{{ extension }}
+    dest: "{{ item }}"
+  with_items: "{{ remote_directories }}"
+

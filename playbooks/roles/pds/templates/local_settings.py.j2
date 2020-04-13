@@ -1,0 +1,55 @@
+"""
+Here we set the local settings
+"""
+
+ALLOWED_HOSTS = [{% for domain in domains %}"{{ domain }}",{% endfor %}]
+TEMPLATES_DIR = [{% for template_dir in templates_dir %}"{{ template_dir }}",{% endfor %}]
+
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = False
+
+# Database
+# https://docs.djangoproject.com/en/1.11/ref/settings/#databases
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': '{{ database_name }}',
+        'USER': '{{ database_user }}',
+        'PASSWORD': '{{ database_pass }}',
+        'HOST': '{{ database_host }}',
+        'PORT': '{{ database_port }}',
+    }
+}
+
+# URL query Sonar projects
+SONAR_URL = 'https://sonar.srv.vocento.in/dashboard?id='
+# URL BitBucket
+BITBUCKET_URL = 'ssh://git@bitbucket.vocento.com:7999'
+# URL RunDeck
+# DEPLOY_SERVER_URL = "http://10.24.14.99:4440"
+DEPLOY_SERVER_URL = "http://localhost:4440"
+# URL deploy
+JOB_DEPLOY_URL = "/api/18/job/cca4fff2-f54c-4741-9abf-3ff85927357d/run"
+# URL cleaning artifacts
+JOB_DELETE_URL = "/api/18/job/0a62e9bc-2adc-4ef8-ba94-3253b3770f41/run"
+# Token de autenticacion
+AUTH_TOKEN = '1UEoJ8ONHynxxODAtT1YitGRfSPvoZEM'
+
+STATIC_ROOT = "{{ static_root }}"
+
+TASKS_ENGINE = 'jenkins'  # It can be jenkins/rundeck
+
+# Data for Nexus 3
+NEXUS_VERSION = '3'  # It can be 2/3
+NEXUS_API_URL = 'https://nexus.srv.vocento.in/service/extdirect'
+NEXUS_REPOSITORY = 'maven-releases'
+
+# Data for Jenkins
+JENKINS_URL = 'https://jenkins2.srv.vocento.in'
+JENKINS_USER = 'jclopez'
+JENKINS_PASSWORD = '_Kbr4nt0s!'
+JENKINS_JOB_DELETE_ARTIFACT = 'delete-artifact-version'
+JENKINS_JOB_DEPLOY_APPLICATION = 'deploy-application'
+

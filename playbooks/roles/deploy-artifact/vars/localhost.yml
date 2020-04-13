@@ -1,0 +1,5 @@
+---
+
+remote_directories:
+  - "/etc/ansible/playbooks/{{ application }}"
+

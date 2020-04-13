@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<udm.DeploymentPackage version="VERSION_DAR" application="congruencias-ws">
+  <application />
+  <orchestrator />
+  <satisfiesOkTestManager>false</satisfiesOkTestManager>
+  <satisfiesOkReleaseManager>false</satisfiesOkReleaseManager>
+  <deployables>
+      <was.War name="webapp-ws" file="webapp-WEBAPP_VERSION.war">
+          <contextRoot>congruencias</contextRoot>
+      </was.War>
+      <was.OracleDatasourceSpec name="sampleOracleDatasource-ws">
+        <jndiName>jdbc/sampleMysqlDatasource</jndiName>
+        <jdbcProvider>Derby JDBC Provider</jdbcProvider>
+        <username>{{bdd.user}}</username>
+        <password>{{bdd.pass}}</password>
+        <URL>{{bdd.url}}</URL>
+        <datasourceHelperClassname>com.mysql.jdbc.Driver</datasourceHelperClassname>
+      </was.OracleDatasourceSpec>
+      <ansible.FileSpec name="ansible-ws">
+          <path>/tmp/test-directory</path>
+          <state>directory</state>
+          <mode>0700</mode>
+      </ansible.FileSpec>
+
+      <!--
+      <was.SibQueueDestinationSpec name="sampleSibQueueDestination-ws">
+          <busName>sampleSIBus</busName>
+      </was.SibQueueDestinationSpec>
+      <was.SibQueueSpec name="sampleSibQueue-ws">
+        <busName>sampleSIBus</busName>
+        <queueName>sampleSIBus</queueName>
+        <description>sample sib queue</description>
+      </was.SibQueueSpec>
+      -->
+  </deployables>
+</udm.DeploymentPackage>

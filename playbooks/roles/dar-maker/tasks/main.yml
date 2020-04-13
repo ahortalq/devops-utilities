@@ -1,0 +1,31 @@
+---
+
+- name: Cargamos las variables del entorno {{ entorno }}
+  include_vars: "{{ entorno }}.yml"
+
+- name: create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - "{{ dir_base }}"
+    - "{{ dir_base }}/maven"
+    - "{{ dir_work }}"
+    - "{{ dir_log }}"
+
+- name: var files
+  template:
+    src: dar-maker.cfg.j2
+    dest: "{{ dir_base }}/dar-maker.cfg"
+    mode: 0775
+
+- name: template dar-maker
+  template:
+    src: dar-maker.sh.j2
+    dest: "{{ dir_base }}/dar-maker.sh"
+    mode: 0775
+
+- name: copy pom.xml files
+  copy:
+    src: "files/"
+    dest: "{{ dir_base }}/maven"

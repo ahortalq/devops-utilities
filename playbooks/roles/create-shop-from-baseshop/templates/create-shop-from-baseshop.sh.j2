@@ -1,0 +1,219 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=CRSFB
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/create-shop-from-baseshop.cfg
+
+#########################
+# THE COMMAND LINE HELP #
+#########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -s slug Git"
+    echo
+}
+
+###############################
+# FUNCIONES
+###############################
+
+###############################
+# 1.- PARA ESCRIBIR LOGS
+###############################
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> "$PROGCODE" "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":s:" opt; do
+    case $opt in
+        s)
+            log "Recibido el slug git ... -s was triggered, Parameter: $OPTARG"
+            sluggit=$OPTARG
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, interrumpimos el proceso"
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, interrumpimos el proceso"
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$sluggit" ]
+then
+    MSG="ERR-005 Slug Git must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+MSG="MSG-005 Se han recibido todos los parametros requeridos" && log "$MSG"
+
+#####################################################################
+# CALCULAMOS EL REPOSITORIO GIT UTILIZANDO LOS PARAMETROS OBTENIDOS #
+#####################################################################
+# AGREGAMOS EL PREFIJO ECOM
+sluggit=ecom_$sluggit
+repositoriogit="$SSH_BITBUCKET/$PROJECT_BITBUCKET/$sluggit.git"
+log "Repositorio Git calculado: $repositoriogit"
+
+########################################
+# CREACION DE UN PROYECTO EN BITBUCKET #
+########################################
+log "MSG-100 Creacion de un nuevo proyecto para BitBucket"
+URL_CREATE_PROJECT="$PROTOCOL_BITBUCKET://$HOST_BITBUCKET:$PORT_BITBUCKET/rest/api/latest/projects/$PROJECT_BITBUCKET/repos?create"
+log "URL_CREATE_PROJECT=$URL_CREATE_PROJECT"
+log "MSG-102 Invocamos al API-REST para crear el repositorio"
+http_return_code=`curl -s -o /dev/null -w "%{http_code}" -u $USER_BITBUCKET:$PASSWORD_BITBUCKET -H 'Content-Type: application/json' -X POST \
+    -d '{"name": "'$sluggit'"}' \
+    $URL_CREATE_PROJECT`
+log "MSG-103 Código de retorno obtenido = $http_return_code"
+if [ "$http_return_code" = "201" ]
+then
+    log "MSG-105 Proyecto creado en BitBucket de forma correcta"
+else
+    log "ERR-100 No ha sido posible crear el proyecto en BitBucket"
+    exit 1
+fi
+
+#####################################################################
+#    CONFIGURACION PATH DE TRABAJO PARA DESCARGA DEL PROYECTO GIT   #
+#####################################################################
+BASEDIR=$DIR_WORK_TEMP/$sluggit
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+[ -d $BASEDIR ] && {
+    log "Existe el directorio de trabajo $BASEDIR"
+    rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR eliminado"
+} || log "No existe el directorio de trabajo $BASEDIR"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+if [ ! -d "$BASEDIR" ]; then
+    # El directorio de trabajo no existe
+    mkdir -p $BASEDIR || { log "No se ha podido crear el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR creado"
+fi
+
+####################################################
+# DESCARGAMOS COPIA DE GIT EN EL DIRECTORIO CREADO #
+####################################################
+cd $BASEDIR
+REPO_GIT=$repositoriogit
+log "Clonamos el repositorio $REPO_GIT"
+$GIT_COMMAND clone $REPO_GIT >> $LOG 2>>$LOG
+log "Clonamos el repositorio $REPOSITORY_TO_CLONATE"
+$GIT_COMMAND clone $REPOSITORY_TO_CLONATE >> $LOG 2>>$LOG
+
+# Verificamos que se ha clonado correctamente el repositorio
+[ -d $sluggit/.git ] || {
+    MSG="ERR-010 No existe el directorio $sluggit/.git, no se ha clonado correctamente el repositorio"
+    log "$MSG"
+    exit 1
+}
+[ -d $SLUG_REPOSITORY_TO_CLONATE/.git ] || {
+    MSG="ERR-010 No existe el directorio $SLUG_REPOSITORY_TO_CLONATE/.git, no se ha clonado correctamente el repositorio"
+    log "$MSG"
+    exit 1
+}
+MSG="MSG-010 Repositorios Git clonados correctamente" && log "$MSG"
+
+#######################################################
+# CAMBIAMOS A LA RAMA MASTER EN EL REPOSITORIO ORIGEN #
+#######################################################
+log "Cambiamos al repositorio origen y checkout a la rama master"
+cd $SLUG_REPOSITORY_TO_CLONATE && $GIT_COMMAND checkout master && cd -
+
+##############################################################################
+# ELIMINAMOS EL DIRECTORIO .GIT Y COPIAMOS EL CONTENIDO AL NUEVO REPOSITORIO #
+##############################################################################
+log "Eliminamos el directorio .git"
+rm -fr $SLUG_REPOSITORY_TO_CLONATE/.git
+log "Copiamos el contenido"
+cp -Rp $SLUG_REPOSITORY_TO_CLONATE/. $sluggit/
+log "Contenido copiado correctamente"
+
+##########################################################
+# CAMBIAMOS AL NUEVO DIRECTORIO Y ACTUALIZAMOS GIT       #
+##########################################################
+cd $sluggit && log "Agregamos el contenido creado al repositorio git" || {
+    exit 1
+}
+$GIT_COMMAND add .
+$GIT_COMMAND commit -m "Estructura inicial para la tienda $sluggit"
+$GIT_COMMAND push origin master
+res=$?
+[ $res -eq 0 ] && {
+    MSG="MSG-020 Push realizado correctamente a la rama master" && log "$MSG"
+} || {
+    MSG="ERR-020 No ha sido posible realizar push a la rama master del repositorio central. Abortamos el proceso"
+    log "$MSG"
+    exit 1
+}
+
+###############################
+# CREACION DE LA RAMA DEVELOP #
+###############################
+log "Creamos la rama develop, cambiamos a ella y hacemos de nuevo push al repositorio"
+$GIT_COMMAND checkout -b develop || {
+    MSG="ERR-025 No ha sido posible crear el branch develop. Abortamos el proceso"
+    log "$MSG"
+    exit 1
+}
+MSG="MSG-025 Rama develop creada correctamente" && log "$MSG"
+$GIT_COMMAND push origin develop
+res=$?
+[ $res -eq 0 ] && {
+    MSG="MSG-030 Push realizado correctamente a la rama develop" && log "$MSG"
+} || {
+    MSG="ERR-030 No ha sido posible realizar push al develop del repositorio central. Abortamos el proceso"
+    log "$MSG"
+    exit 1
+}
+
+##################################################
+# ELIMINACION DEL DIRECTORIO TEMPORAL DE TRABAJO #
+##################################################
+log "Eliminamos directorio temporal de trabajo $BASEDIR"
+
+[ -d $BASEDIR ] && {
+    log "Existe el directorio de trabajo $BASEDIR"
+    rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR eliminado"
+}
+
+MSG="MSG-035 Nueva tienda creada de forma correcta"
+log "$MSG"
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+exit 0

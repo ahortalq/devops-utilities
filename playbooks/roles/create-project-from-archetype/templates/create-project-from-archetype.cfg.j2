@@ -1,0 +1,46 @@
+##############################
+# Variables de configuracion #
+##############################
+
+DIR_BASE={{ dir_base }}
+DIR_WORK={{ dir_work }}
+DIR_LOG={{ dir_log }}
+DIR_WORK_TEMP=$DIR_WORK/create-project-from-archetype
+LOG=$DIR_LOG/create-project-from-archetype.log
+MVN_COMMAND={{ mvn_command }}
+GIT_COMMAND={{ git_command }}
+
+#########################################
+# Variables de configuracion para SONAR #
+#########################################
+
+PROTOCOL_SONAR=https
+HOST_SONAR=sonar.srv.vocento.in
+PORT_SONAR=443
+END_POINT_SONAR_NEW_PROJECT=/api/projects/create
+END_POINT_SONAR_UPDATE_PROFILE=/api/qualityprofiles/add_project
+END_POINT_SONAR_UPDATE_QUALITY_GATE=/api/qualitygates/select
+
+#############################################
+# Variables de configuracion para BitBucket #
+#############################################
+
+SSH_BITBUCKET=ssh://git@bitbucket.vocento.com:7999
+PROTOCOL_BITBUCKET=https
+HOST_BITBUCKET=bitbucket.vocento.com
+PORT_BITBUCKET=443
+USER_BITBUCKET=devops
+PASSWORD_BITBUCKET=Pl4st1l1n4
+API_WEBHOOK=http://receiver-webhook.srv.vocento.in/api
+
+###################################################################
+# Variables de configuracion para SONAR, profiles y quality gates #
+###################################################################
+# wordpress
+wordpress_languaje="php"
+wordpress_profile="Wordpress%20way"
+wordpress_quality_gate=1
+# javascript
+javascript_languaje="js"
+javascript_profile="Vocento%20way"
+javascript_quality_gate=1

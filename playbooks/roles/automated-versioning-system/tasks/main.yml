@@ -1,0 +1,40 @@
+---
+
+- name: Add the user 'jenkins' to the jcla group
+  user:
+    name: jenkins
+    groups: jenkins,jcla
+    append: yes
+    generate_ssh_key: yes
+    ssh_key_bits: 2048
+    ssh_key_file: .ssh/id_rsa
+
+- name: Cargamos las variables del entorno {{ entorno }}
+  include_vars: "{{ entorno }}.yml"
+
+- name: create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: jcla
+    group: jcla
+    mode: 0775
+    recurse: yes
+  with_items:
+    - "{{ dir_base }}"
+    - "{{ dir_work }}"
+    - "{{ dir_work }}/yaml-maker"
+    - "{{ dir_work }}/yaml-maker/yamls-cfg-files"
+    - "{{ dir_log }}"
+
+- name: var files
+  template:
+    src: automated-versioning-system.cfg.j2
+    dest: "{{ dir_base }}/automated-versioning-system.cfg"
+    mode: 0775
+
+- name: template automated-versioning-system
+  template:
+    src: automated-versioning-system.sh.j2
+    dest: "{{ dir_base }}/automated-versioning-system.sh"
+    mode: 0775

@@ -1,0 +1,134 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.xebialabs.dar.congruencias</groupId>
+    <artifactId>congruencias</artifactId>
+    <version>VERSION_DAR</version>
+    <packaging>dar</packaging> <!-- DAR packaging -->
+
+    <properties>
+        <com.xebialabs.congruencias.schemabdd.version>1.0.0</com.xebialabs.congruencias.schemabdd.version>
+        <com.xebialabs.congruencias.webapp.version>1.0.0</com.xebialabs.congruencias.webapp.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.xebialabs.congruencias</groupId>
+            <artifactId>schemabdd</artifactId>
+            <version>${com.xebialabs.congruencias.schemabdd.version}</version>
+            <type>zip</type>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.xebialabs.congruencias</groupId>
+            <artifactId>webapp</artifactId>
+            <version>${com.xebialabs.congruencias.webapp.version}</version>
+            <type>war</type>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>2.10</version>
+                <executions>
+                    <execution>
+                        <id>unpack</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.xebialabs.congruencias</groupId>
+                                    <artifactId>schemabdd</artifactId>
+                                    <version>${com.xebialabs.congruencias.schemabdd.version}</version>
+                                    <type>zip</type>
+                                    <overWrite>true</overWrite>
+                                    <outputDirectory>target/sqls/mysqls</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>com.xebialabs.deployit</groupId>
+                <artifactId>maven-deployit-plugin</artifactId>
+                <version>4.5.2</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <deploymentPackageProperties>
+                        <application>Applications/Congruencias/congruencias</application>
+                    </deploymentPackageProperties>
+                    <serverAddress>localhost</serverAddress>
+                    <port>4516</port>
+                    <username>admin</username>
+                    <password>2001jcla</password>
+                    <deployables>
+                        <smoketest.HttpRequestTest name="smokeTest">
+                            <url>{{smoke.test.url}}</url>
+                            <expectedResponseText>Bienvenido a la calculadora</expectedResponseText>
+                        </smoketest.HttpRequestTest>
+                        <sql.SqlScripts name="schemabdd" groupId="com.xebialabs.congruencias" artifactId="schemabdd" file="target/sqls/mysqls">
+                            <checksum>${com.xebialabs.congruencias.schemabdd.version}</checksum>
+                        </sql.SqlScripts>
+                        <!--
+                        <tomcat.War name="webapp" groupId="com.xebialabs.congruencias" artifactId="webapp">
+                            <scanPlaceholders>true</scanPlaceholders>
+                            <checksum>${com.xebialabs.congruencias.webapp.version}</checksum>
+                            <contextRoot>congruencias</contextRoot>
+                        </tomcat.War>
+                        <tomcat.DataSourceSpec name="congruenciasds">
+                            <jndiName>jdbc/CongruenciasDB</jndiName>
+                            <driverClassName>com.mysql.jdbc.Driver</driverClassName>
+                            <url>{{bdd.url}}</url>
+                            <username>{{bdd.user}}</username>
+                            <password>{{bdd.pass}}</password>
+                        </tomcat.DataSourceSpec>
+                        -->
+                        <wlp.WebApplicationSpec name="webapp" groupId="com.xebialabs.congruencias" artifactId="webapp">
+                            <scanPlaceholders>true</scanPlaceholders>
+                            <checksum>${com.xebialabs.congruencias.webapp.version}</checksum>
+                            <!--<location>{{location}}</location>-->
+                            <contextRoot>congruencias</contextRoot>
+                        </wlp.WebApplicationSpec>
+                        <wlp.GenericDataSourceSpec name="dbDatasource">
+                            <jndiName>jdbc/CongruenciasDB</jndiName>
+                            <jdbcDriverRef>dbDriver</jdbcDriverRef>
+                            <connectionManagerRef>dbConnectionManager</connectionManagerRef>
+                            <url>{{bdd.url}}</url>
+                            <user>{{bdd.user}}</user>
+                            <password>{{bdd.pass}}</password>
+                        </wlp.GenericDataSourceSpec>
+                        <wlp.JdbcDriverSpec name="dbDriver">
+                            <libraryRef>dbLibrary</libraryRef>
+                            <xaDataSource>com.mysql.jdbc.Driver</xaDataSource>
+                        </wlp.JdbcDriverSpec>
+                        <wlp.FilesetSpec name="dbFileset">
+                            <dir>/usr/share/java/mysql-connector-java-8.0.12.jar</dir>
+                        </wlp.FilesetSpec>
+                        <wlp.LibrarySpec name="dbLibrary">
+                            <filesetRef>dbFileset</filesetRef>
+                        </wlp.LibrarySpec>
+                        <wlp.ConnectionManagerSpec name="dbConnectionManager">
+                            <maxPoolSize>20</maxPoolSize>
+                            <minPoolSize>10</minPoolSize>
+                        </wlp.ConnectionManagerSpec>
+        
+                    </deployables>
+                    <applicationDependencies>
+                        <entry key="webservices">[1.6.0-B1,1.6.0-B99]</entry>
+                    </applicationDependencies>
+                    <dependencyResolution>LATEST</dependencyResolution>
+                    <undeployDependencies>false</undeployDependencies>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

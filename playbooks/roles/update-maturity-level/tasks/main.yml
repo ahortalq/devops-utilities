@@ -1,0 +1,9 @@
+---
+
+- name: Actualizamos el nivel de madurez de la aplicacion {{ application }} en version {{ version }}
+  uri:
+    url: "https://pds.srv.vocento.in/api/update-ml-application/"
+    method: POST
+    body: "{'application_name': '{{ application }}', 'application_version': '{{ version }}', 'state_application_version_id': '{{ entorno }}'}"
+    status_code: 201
+    body_format: json

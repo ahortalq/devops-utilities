@@ -1,0 +1,19 @@
+---
+
+- hosts: localhost
+  connection: local
+  become: true
+  roles:
+    - { role: automated-versioning-system }
+    - { role: create-project-from-archetype }
+    - { role: delete-artifact-version }
+    - { role: deploy-application }
+    - { role: create-shop-from-baseshop }
+    - { role: create-git-project }
+    - { role: update-pom-version }
+    - { role: get-free-port }
+    - { role: dar-maker }
+    - { role: manage-dependencies }
+    - { role: update-pom-versions }
+    - { role: yaml-maker }
+    - { role: get-dockerhub-images }

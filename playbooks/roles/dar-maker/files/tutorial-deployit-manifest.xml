@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<udm.DeploymentPackage version="VERSION_DAR" application="tutorial">
+  <application />
+  <orchestrator />
+  <satisfiesOkTestManager>false</satisfiesOkTestManager>
+  <satisfiesOkReleaseManager>false</satisfiesOkReleaseManager>
+  <deployables>
+    <openshift.ResourcesFile name="/openshift-tutorial" file="/dc.yml">
+      <checksum>TUTORIAL_VERSION</checksum>
+    </openshift.ResourcesFile>
+    <openshift.RouteSpec name="/openshift-route">
+      <routeName>tutorial-route</routeName>
+      <serviceName>tutorial-service</serviceName>
+      <serviceWeight>256</serviceWeight>
+      <alternateServices />
+      <terminationType>None</terminationType>
+    </openshift.RouteSpec>
+    <openshift.ResourcesFile name="/openshift-service" file="/sc.yml">
+      <checksum>TUTORIAL_VERSION</checksum>
+    </openshift.ResourcesFile>
+  </deployables>
+</udm.DeploymentPackage>

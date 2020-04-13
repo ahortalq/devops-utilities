@@ -1,0 +1,25 @@
+---
+
+- name: Cargamos las variables del entorno {{ entorno }}
+  include_vars: "{{ entorno }}.yml"
+
+- name: create directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - "{{ dir_base }}"
+    - "{{ dir_work }}"
+    - "{{ dir_log }}"
+
+- name: var files
+  template:
+    src: update-pom-versions.cfg.j2
+    dest: "{{ dir_base }}/update-pom-versions.cfg"
+    mode: 0775
+
+- name: template update-pom-versions
+  template:
+    src: update-pom-versions.sh.j2
+    dest: "{{ dir_base }}/update-pom-versions.sh"
+    mode: 0775

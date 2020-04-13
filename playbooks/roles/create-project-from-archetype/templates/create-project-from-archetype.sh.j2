@@ -1,0 +1,446 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=CRPFA
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/create-project-from-archetype.cfg
+
+#########################
+# THE COMMAND LINE HELP #
+#########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -p proyecto Git"
+    echo "   -s slug Git"
+    echo "   -q arquetipo a utilizar"
+    echo "   -l nombre de la aplicacion"
+    echo "   -a nombre del artefacto a crear"
+    echo "   -v versión del nuevo proyecto a crear"
+    echo "   -u nombre de la rama a actualizar (no obligatorio)"
+    echo "   -o parámetros opcionales para el arquetipo Maven"
+    echo
+    echo "Parametros opcionales Maven para proyectos JavaScript:"
+    echo
+    echo "   -Dpackage-name=tag-manager"
+    echo "   -Dpackage-version=4.5.0"
+    echo "   -Drepo-git=ssh://git@bitbucket.vocento.com:7999/dev/test1.git"
+    echo
+    echo "Parametros opcionales Maven para proyectos WordPress:"
+    echo
+    echo "   -Dinstance-name=\"La Rioja\""
+    echo "   -Drepo-git=ssh://git@bitbucket.vocento.com:7999/dev/test1.git"
+    echo
+    echo "Parametros opcionales Maven para proyectos Ansible:"
+    echo
+    echo "   -Dtechnology-type=javascript"
+    echo "   -Dartifact-id=tag-manager"
+    echo
+}
+
+###############################
+# FUNCIONES
+###############################
+
+###############################
+# 1.- PARA ESCRIBIR LOGS
+###############################
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> CRPFA "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+#############################################################################################
+# 2.- PARA OBTENER EL NOMBRE DEL PROGRAMA Y LA LINEA EN QUE SE PRODUJO EL ERROR
+#############################################################################################
+function error_exit
+{
+    log "${PROGNAME}: ${1:-"Unknown Error"}"
+    exit 1
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":p:s:q:l:a:v:o:u:" opt; do
+    case $opt in
+        p)
+            log "Recibido el proyecto git ... -p was triggered, Parameter: $OPTARG"
+            proyectogit=$OPTARG
+            PROYECTOGIT_RECIBIDO="true"
+            ;;
+        s)
+            log "Recibido el slug git ... -s was triggered, Parameter: $OPTARG"
+            sluggit=$OPTARG
+            SLUGGIT_RECIBIDO="true"
+            ;;
+        q)
+            log "Recibido el arquetipo ... -q was triggered, Parameter: $OPTARG"
+            archetype=$OPTARG
+            ARQUETIPO_RECIBIDO="true"
+            ;;
+        l)
+            log "Recibida la aplicacion ... -l was triggered, Parameter: $OPTARG"
+            application=$OPTARG
+            APLICACION_RECIBIDA="true"
+            ;;
+        a)
+            log "Recibido el nombre del ArtifactId a crear ... -a was triggered, Parameter: $OPTARG"
+            artifactid=$OPTARG
+            ARTIFACT_ID_RECIBIDO="true"
+            ;;
+        v)
+            log "Recibida la version del nuevo proyecto ... -v was triggered, Parameter: $OPTARG"
+            versionartifactid=$OPTARG
+            VERSION_RECIBIDA="true"
+            ;;
+        u)
+            log "Recibido el parametro de actualizacion ... -u was triggered, Parameter: $OPTARG"
+            update_branch=$OPTARG
+            UPDATE_RECIBIDO="true"
+            ;;
+        o)
+            log "Recibidos los parametros opcionales ... -o was triggered, Parameter: $OPTARG"
+            optionalparameters=$OPTARG
+            OPT_PARAMETERS_RECIBIDOS="true"
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, interrumpimos el proceso"
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, interrumpimos el proceso"
+            exit 1
+            ;;
+    esac
+done
+
+if [ ! "$PROYECTOGIT_RECIBIDO" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado el proyecto Git, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$SLUGGIT_RECIBIDO" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado el slug Git, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$ARQUETIPO_RECIBIDO" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado el archetype, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$APLICACION_RECIBIDA" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado la aplicacion , no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$ARTIFACT_ID_RECIBIDO" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado el artifact_id , no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$VERSION_RECIBIDA" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado la version, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+
+MSG="MSG-005 Se han recibido todos los parametros requeridos" && log "$MSG"
+
+#####################################################################
+# CALCULAMOS EL REPOSITORIO GIT UTILIZANDO LOS PARAMETROS OBTENIDOS #
+#####################################################################
+repositoriogit="$SSH_BITBUCKET/$proyectogit/$sluggit.git"
+log "Repositorio Git calculado: $repositoriogit"
+
+#######################################
+# CREACION DE UN WEBHOOK EN BITBUCKET #
+#######################################
+log "MSG-100 Creacion de un nuevo webhook para BitBucket"
+URL_CREATE_WEBHOOK="$PROTOCOL_BITBUCKET://$HOST_BITBUCKET:$PORT_BITBUCKET/rest/api/latest/projects/${proyectogit^^}/repos/$sluggit/settings/hooks/com.atlassian.stash.plugin.stash-web-post-receive-hooks-plugin:postReceiveHook/enabled"
+HTTP_BITBUCKET_PROJECT="$PROTOCOL_BITBUCKET://$HOST_BITBUCKET:$PORT_BITBUCKET/projects/${proyectogit^^}/repos/$sluggit/browse?at=refs%2Ftags%2F"
+log "URL_CREATE_WEBHOOK=$URL_CREATE_WEBHOOK"
+curl -s -u $USER_BITBUCKET:$PASSWORD_BITBUCKET -H 'Content-Type: application/json' -X PUT \
+    -d '{"hook-url-0": "'$API_WEBHOOK'/'$application'/'$artifactid'"}' \
+    $URL_CREATE_WEBHOOK || { log "ERR-100 No ha sido posible crear el proyecto en BitBucket"; exit 1; }
+log "MSG-105 Proyecto creado en BitBucket de forma correcta"
+
+################################################################
+# VAMOS A CREAR UN NUEVO PROYECTO EN SONAR PARA EL ANALIS
+# DEPENDIENDO DEL PROFILE UTILIZADO SE ASOCIARAN UNOS LENGUAJES
+# U OTROS.
+# EVITAMOS LA CREACION SI TRATAMOS PROYECTOS ANSIBLE
+################################################################
+if [ ! "$archetype" = "ansible" ]
+then
+    log "MSG-050 Creacion de un nuevo proyecto para los analisis con Sonar"
+    log "URL para creacion del proyecto:"
+    URL_CREATE_PROJECT="$PROTOCOL_SONAR://$HOST_SONAR:$PORT_SONAR$END_POINT_SONAR_NEW_PROJECT?project=vocento.$archetype:$artifactid&name=$artifactid"
+    log "URL_CREATE_PROJECT=$URL_CREATE_PROJECT"
+    curl -s -X POST $URL_CREATE_PROJECT --insecure || { log "ERR-040 No ha sido posible crear el proyecto en Sonar"; exit 1; }
+    log "MSG-055 Proyecto creado en Sonar de forma correcta"
+fi
+
+##################################################################################
+# Debemos calcular el profile que se aplica dependiendo del tipo de proyecto
+##################################################################################
+
+update_project_profile() {
+    # Esta funcion debe recibir dos parametros:
+    # - Nombre del profile
+    # - Lenguaje al que pertence el profile
+    log "URL para update del proyecto. Se aplica el profile $1 para el lenguaje $2"
+    URL_UPDATE_PROJECT="$PROTOCOL_SONAR://$HOST_SONAR:$PORT_SONAR$END_POINT_SONAR_UPDATE_PROFILE?profileName=$1&projectKey=vocento.$archetype:$artifactid&language=$2"
+    log "URL_UPDATE_PROJECT=$URL_UPDATE_PROJECT"
+    curl -s -X POST $URL_UPDATE_PROJECT --insecure || { log "ERR-050 No ha sido posible actualizar el profile para el proyecto en Sonar"; exit 1; }
+}
+
+update_project_quality_gate() {
+    # Esta funcion debe recibir un parametro:
+    # - Id de la quality gate
+    log "URL para update del quality gate. Se aplica la quality gate $1"
+    URL_UPDATE_QUALITY_GATE="$PROTOCOL_SONAR://$HOST_SONAR:$PORT_SONAR$END_POINT_SONAR_UPDATE_QUALITY_GATE?gateId=$1&projectKey=vocento.$archetype:$artifactid"
+    log "URL_UPDATE_QUALITY_GATE=$URL_UPDATE_QUALITY_GATE"
+    curl -s -X POST $URL_UPDATE_QUALITY_GATE --insecure || { log "ERR-051 No ha sido posible actualizar la quality gate para el proyecto en Sonar"; exit 1; }
+}
+
+case "$archetype" in
+javascript)
+    update_project_profile $javascript_profile $javascript_languaje
+    update_project_quality_gate $javascript_quality_gate
+    ;;
+wordpress)
+    update_project_profile $wordpress_profile $wordpress_languaje
+    update_project_quality_gate $wordpress_quality_gate
+    ;;
+*)
+   ;;
+esac
+
+#####################################################################
+#    CONFIGURACION PATH DE TRABAJO PARA DESCARGA DEL PROYECTO GIT
+#####################################################################
+
+# VALOR DE EJEMPLO (por defecto)
+# /var/opt/vocento/create-project-from-archetype/empty-web-lib
+BASEDIR=$DIR_WORK_TEMP/$artifactid
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+
+[ -d $BASEDIR ] && {
+    log "Existe el directorio de trabajo $BASEDIR"
+    rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR eliminado"
+} || log "No existe el directorio de trabajo $BASEDIR"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+
+if [ ! -d "$BASEDIR" ]; then
+    # El directorio de trabajo no existe
+    mkdir -p $BASEDIR || { log "No se ha podido crear el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR creado"
+fi
+
+################################################################
+# DESCARGAMOS COPIA DE GIT EN EL DIRECTORIO CREADO
+################################################################
+
+cd $BASEDIR
+# Obtenemos una copia de trabajo
+REPO_GIT=$repositoriogit
+log "Clonamos el repositorio $REPO_GIT"
+$GIT_COMMAND clone $REPO_GIT >> $LOG 2>>$LOG
+
+# Verificamos que se ha clonado correctamente el repositorio
+DIR_CREADO=`ls -F | grep '/$'`
+[ -d $DIR_CREADO/.git ] || {
+    MSG="ERR-010 No existe el directorio $DIR_CREADO/.git, no se ha clonado correctamente el repositorio"
+    log "$MSG"
+    exit 1
+}
+
+MSG="MSG-010 Repositorio Git clonado correctamente" && log "$MSG"
+
+log "Cambiamos al directorio con el respositorio git clonado: cd $DIR_CREADO"
+cd $DIR_CREADO
+
+###################################################################################
+# Si se trata de un update, debemos cambiar a la rama recibida como parametro
+###################################################################################
+
+if [ "$UPDATE_RECIBIDO" = "true" ]
+then
+    MSG="MSG-011 Se trata de una actualizacion, hacemos checkout a la rama recibida como parametro" && log "$MSG"
+    $GIT_COMMAND checkout $update_branch || {
+        MSG="MSG-012 La rama no existe, intentamos crearla cambiando primero a la rama develop" && log "$MSG"
+        # No ha sido posible hacer checkout a la rama de actualizacion
+        # Intentamos crearla desde la rama develop (si existe)
+        $GIT_COMMAND branch -a | grep develop && {
+            MSG="MSG-013 Existe la rama develop, hacemos checkout y ramificamos" && log "$MSG"
+            $GIT_COMMAND checkout develop
+            $GIT_COMMAND checkout -b $update_branch
+        } || {
+            MSG="ERR-011 No ha sido posible hacer checkout al branch $update_branch para actualizacion. Tampoco existe la rama develop para poder ramificar. Abortamos el proceso"
+            log "$MSG"
+            exit 1
+        }
+    }
+fi
+
+################################################################################
+# VAMOS A UTILIZAR OPTIONARLPARAMETERS
+# HAY QUE TENER CUIDADO SI SE PASAN VALORES CON ESPACIO EN BLANCO
+################################################################################
+read -d '' COMMAND << EOF
+$MVN_COMMAND archetype:generate -B \
+ -DarchetypeGroupId=vocento.devops.archetypes \
+ -DarchetypeArtifactId=$archetype \
+ -DarchetypeVersion=LATEST \
+ -DgroupId=test \
+ -DartifactId=$artifactid \
+ -Dversion=$versionartifactid \
+ -Drepo-git=$repositoriogit \
+ -Dslug=$sluggit \
+ -Dapplication=$application \
+ $optionalparameters
+EOF
+
+################################################################################
+# VOLCAMOS EL CONTENIDO DEL COMANDO MAVEN GENERADO
+# ESTO LO HACEMOS ASI PARA PODER PASAR CADENAS DE TEXTO CON ESPACIO EN BLANCO
+################################################################################
+[ ! -d $artifactid ] && [ ! -d .mvn ] && echo $COMMAND > $BASEDIR/mvn_comand.sh && chmod +x $BASEDIR/mvn_comand.sh && $BASEDIR/mvn_comand.sh && {
+    MSG="MSG-015 El arquetipo se ha generado correctamente" && log "$MSG"
+} || {
+    MSG="ERR-015 No ha sido posible generar correctamente el proyecto desde el arquetipo. Abortamos el proceso"
+    log "$MSG"
+    [ -d $artifactid ] && log "Ya existe el directorio $artifactid"
+    [ -d .mvn ] && log "Ya existe el directorio .mvn"
+    exit 1
+}
+
+#####################################################################################
+# TENEMOS QUE REESTRUCTURAR EL CONTENIDO QUE GENERA EL ARQUETIPO
+# PRIMERO, EL PRIMER NIVEL QUE NOS ENCONTRAMOS ES EL ARTIFACTID
+# TOMAMOS EL CONTENIDO DE $ARTIFACTID/SRC/MAIN/$ARCHETYPE AL DIRECTORIO LOCAL
+#####################################################################################
+log "Reagrupamos contenido"
+[ -d $artifactid/src/main/$archetype ] && {
+    [ "$UPDATE_RECIBIDO" = "true" ] && {
+        ##############################################
+        # Se trata de una actualizacion de proyecto
+        ##############################################
+        # Si el fichero no existe en local y el arquetipo ha generado uno, lo copiamos a primer nivel
+        README_FILE=$artifactid/src/main/$archetype/README.md
+        [ ! -f README.md ] && [ -f $README_FILE ] && cp -p $README_FILE . && log "Copiado el fichero README.md generado por el arquetipo" || {
+            log "No se ha copiado el fichero README.md generado por el arquetipo. O bien YA existe o bien no ha sido generado por el arquetipo"
+        }
+    } || {
+        ################################################
+        # Se trata de la creacion de un nuevo  proyecto
+        ################################################
+        # Copiamos todo el contenido al primer nivel
+        cp -Rp $artifactid/src/main/$archetype/. .
+    }
+    # Eliminamos el directorio del archetype
+    rm -fr $artifactid/src/main/$archetype
+    # Renombramos el directorio del archetype a .mvn
+    mv $artifactid .mvn && log "Creado el directorio .mvn generado por el arquetipo"
+} || log "No ha sido posible hacer la reagrupacion"
+
+log "Agregamos el contenido creado al repositorio git"
+$GIT_COMMAND add .
+$GIT_COMMAND add .mvn
+$GIT_COMMAND commit -m "Estructura inicial/mavenizacion de proyecto"
+REMOTE_BRANCH=master
+[ "$UPDATE_RECIBIDO" = "true" ] && REMOTE_BRANCH=$update_branch
+$GIT_COMMAND push origin $REMOTE_BRANCH
+
+res=$?
+[ $res -eq 0 ] && {
+    MSG="MSG-020 Push realizado correctamente a la rama $REMOTE_BRANCH" && log "$MSG"
+} || {
+    MSG="ERR-020 No ha sido posible realizar push a la rama $REMOTE_BRANCH del repositorio central. Abortamos el proceso"
+    log "$MSG"
+    exit 1
+}
+
+#####################################################################################
+# SI SE TRATA DE LA CREACION DE UN NUEVO PROYECTO TENEMOS QUE CREAR LA RAMA DEVELOP #
+#####################################################################################
+
+[ ! "$UPDATE_RECIBIDO" = "true" ] && {
+    log "Creamos la rama develop, cambiamos a ella y hacemos de nuevo push al repositorio central"
+    $GIT_COMMAND checkout -b develop || {
+        MSG="ERR-025 No ha sido posible crear el branch develop. Abortamos el proceso"
+        log "$MSG"
+        exit 1
+    }
+
+    MSG="MSG-025 Rama develop creada correctamente" && log "$MSG"
+
+    $GIT_COMMAND push origin develop
+
+    res=$?
+    [ $res -eq 0 ] && {
+        MSG="MSG-030 Push realizado correctamente a la rama develop" && log "$MSG"
+    } || {
+        MSG="ERR-030 No ha sido posible realizar push al develop del repositorio central. Abortamos el proceso"
+        log "$MSG"
+        exit 1
+    }
+}
+
+log "Eliminamos directorio temporal de trabajo $BASEDIR"
+
+[ -d $BASEDIR ] && {
+        log "Existe el directorio de trabajo $BASEDIR"
+        rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; exit 1; }
+        log "Directorio de trabajo $BASEDIR eliminado"
+}
+
+MSG="MSG-035 Proyecto creado desde arquetipo de forma correcta"
+log "$MSG"
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+exit 0

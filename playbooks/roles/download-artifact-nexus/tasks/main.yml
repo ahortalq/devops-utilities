@@ -1,0 +1,17 @@
+---
+
+- name: Eliminamos el artefacto si previamente existe en el directorio temporal
+  file:
+    state: absent
+    path: /tmp/{{ artifactId }}-{{ artifact_version }}.{{ extension }}
+
+- name: Descarga del artefacto {{ artifactId }} de Nexus en version {{ artifact_version }}
+  maven_artifact:
+    group_id: "{{ groupId }}"
+    artifact_id: "{{ artifactId }}"
+    version: "{{ artifact_version }}"
+    extension: "{{ extension }}"
+    repository_url: "{{ repository_url }}"
+    validate_certs: False
+    dest: /tmp/{{ artifactId }}-{{ artifact_version }}.{{ extension }}
+

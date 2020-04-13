@@ -1,0 +1,25 @@
+---
+logs_directory: /var/log/vocento
+logs_uwsgi: /var/log/uwsgi
+logs_nginx: /var/log/nginx
+# database_host: des.db.srv.vocento.in
+database_host: 10.24.112.143
+database_port: 3306
+database_name: pds
+database_user: pds
+database_pass: pds
+static_root: "{{ proj_path_static }}"
+proj_name: pds
+proj_path: "/opt/vocento/pyprojects/{{ proj_name }}"
+proj_path_src: "{{ proj_path }}/src"
+proj_path_venv: "{{ proj_path }}/venv"
+proj_path_static: "{{ proj_path }}/static"
+proj_path_conf: "{{ proj_path }}/conf"
+domains:
+  - localhost
+  - 127.0.0.1
+  - 10.24.14.99
+  - 10.24.112.143
+templates_dir:
+  - "{{ proj_path_src }}/templates"
+repo_git_url: https://jclopez:_Kbr4nt0s!@bitbucket.vocento.com/scm/dev/pds.git

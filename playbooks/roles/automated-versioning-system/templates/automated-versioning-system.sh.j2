@@ -1,0 +1,647 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=AUTVS
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/automated-versioning-system.cfg
+
+SUMMARY_FILE=/tmp/$start_time.email
+
+##########################
+# The command line help  #
+##########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -m directorio en el que se ubica el fichero pom.xml"
+    echo "   -g repositorio Git con el código fuente a compilar"
+    echo "   -a nombre de la aplicación. Una aplicación puede tener varios componentes/artefactos"
+    echo "   -c nombre del componente. Corresponde con el artifactId"
+    echo "   -l changelog. Conjunto de cambios que motivan la compilación, 'WIP-1 Text A, WIP-2 Text B'"
+    echo "   -u true. Si se desea hacer upload al repositorio Git de los ficheros modificados"
+    echo "         No es un parámetro obligatorio."
+    echo "   -r rama de la que obtener el código fuente. Ejemplo: origin/feature5"
+    echo "         Si no se pasa este parámetro, se tomará la rama master."
+    echo "   -e email para notificaciones"
+    echo "   -b build number"
+    echo
+}
+
+# Funciones
+# 1.- Para escribir logs
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> $PROGCODE "$message >> $LOG
+    echo $NOW" -> $PROGCODE "$message >> $SUMMARY_FILE
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+
+# 2.- Para obtener  el valor de properties
+function getPropertyFromFile()
+{
+    propertyName=`echo $1 | sed -e 's/\./\\\./g'`
+    fileName=$2;
+    cat $fileName | sed -n -e "s/^[ ]*//g;/^#/d;s/^$propertyName=//p" | tail -1
+}
+
+# 3.- Para obtener el nombre del programa y la linea en que se produjo el error
+function error_exit
+{
+    log "${PROGNAME}: ${1:-"Unknown Error"}"
+    exit 1
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+# DEFINIMOS LA URL DE LA BUILD DE JENKINS
+#####################################################################
+URL_BUILD_JENKINS="http://localhost:8080/"
+[ -n "$BUILD_URL" ] && URL_BUILD_JENKINS=$BUILD_URL
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":a:c:g:m:r:u:l:e:b:" opt; do
+    case $opt in
+        m)
+            log "Recibido el directorio con el pom.xml de Maven ... -m was triggered, Parameter: $OPTARG"
+            directorio_pom=$OPTARG
+            DIRECTORIOPOM_RECIBIDO="true"
+            ;;
+        g)
+            log "Recibido el repositorio git ... -g was triggered, Parameter: $OPTARG"
+            repositorio_git=$OPTARG
+            REPOSITORIOGIT_RECIBIDO="true"
+            ;;
+        a)
+            log "Recibida la aplicacion ... -a was triggered, Parameter: $OPTARG"
+            aplicacion=$OPTARG
+            APLICACION_RECIBIDA="true"
+            ;;
+        c)
+            log "Recibido el componente ... -c was triggered, Parameter: $OPTARG"
+            # El componente se corresponde con el artefacto
+            componente=$OPTARG
+            COMPONENTE_RECIBIDO="true"
+            ;;
+        r)
+            log "Recibida la rama de la que obtener el codigo ... -r was triggered, Parameter: $OPTARG"
+            branch_source_code=$OPTARG
+            RAMA_RECIBIDA="true"
+            ;;
+        u)
+            log "Recibida el update de los ficheros modificados ... -u was triggered, Parameter: $OPTARG"
+            upload_modified_files=$OPTARG
+            HACER_UPDATE_RECIBIDO="true"
+            ;;
+        l)
+            log "Recibido el changelog ... -l was triggered, Parameter: $OPTARG"
+            changelog=$OPTARG
+            CHANGELOG_RECIBIDO="true"
+            ;;
+        e)
+            log "Recibido el email ... -e was triggered, Parameter: $OPTARG"
+            email=$OPTARG
+            EMAIL_RECIBIDO="true"
+            ;;
+        b)
+            log "Recibido el numero de build ... -b was triggered, Parameter: $OPTARG"
+            BUILD_NUMBER=$OPTARG
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, interrumpimos el proceso"
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, interrumpimos el proceso"
+            exit 1
+            ;;
+    esac
+done
+
+if [ ! "$DIRECTORIOPOM_RECIBIDO" ] || [ ! "$REPOSITORIOGIT_RECIBIDO" ] || [ ! "$APLICACION_RECIBIDA" ] || [ ! "$COMPONENTE_RECIBIDO" ]
+then
+    MSG="ERR-005 No se han facilitado los parametros obligatorios, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+MSG="MSG-005 Se han recibido todos los parametros requeridos"
+log "$MSG"
+
+#####################################################################
+#    DEFINIMOS LAS FUNCIONES PARA ENVIO DE EMAIL                    #
+#####################################################################
+# 4.- Envio de notificaciones por email
+function envio_email
+{
+    echo "From: jenkins@xebialabs.com" > /tmp/mailtest
+    echo "To: $email" >> /tmp/mailtest
+    echo "Subject: $1 - Jenkins: resultado build del componente $componente [$URL_BUILD_JENKINS]" >> /tmp/mailtest
+    echo "" >> /tmp/mailtest
+    cat $SUMMARY_FILE >> /tmp/mailtest
+    # No enviamos email
+    # cat /tmp/mailtest | sendmail -t
+    rm $SUMMARY_FILE
+}
+
+# 5.- Salida de funcion con envio de email
+function ko_notify
+{
+    envio_email "BUILD KO"
+    exit 1
+}
+
+#####################################################################
+#    ESTUDIAMOS LAS RAMAS RECIBIDAS, POR DEFECTO SERA MASTER       #
+#####################################################################
+[ ! "$RAMA_RECIBIDA" ] && branch_source_code=master
+log "Rama de la que obtener el codigo fuente = $branch_source_code"
+#########################################
+# CONSERVAMOS lA RAMA ORIGINAL PARA PDS #
+#########################################
+branch_source_code_original=$branch_source_code
+################################################
+# SI TRATAMOS FEATURE, CONCATENAMOS CON ORIGIN #
+################################################
+start_with=`echo $branch_source_code | awk -F/ '{ print $1 }'`
+if [ "$start_with" = "feature" ]
+then
+    log "La rama recibida viene informada con feature/*. Es necesario concatenar con origin para fusionar correctamente"
+    branch_source_code="origin/$branch_source_code"
+    log "Rama de la que obtener el codigo fuente = $branch_source_code"
+fi
+
+#####################################################################
+#    CONFIGURACION PATH DE TRABAJO PARA DESCARGA DEL PROYECTO GIT   #
+#####################################################################
+# Valor de ejemplo (por defecto)
+# /var/opt/xebialabs/automated-versioning-system/tag-manager
+BASEDIR=$BASE_DIR_PROJECTS/$aplicacion
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+[ -d $BASEDIR ] && {
+        log "Existe el directorio de trabajo $BASEDIR"
+        rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; ko_notify; }
+        log "Directorio de trabajo $BASEDIR eliminado"
+} || log "No existe el directorio de trabajo $BASEDIR"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+mkdir -p $BASEDIR || { log "No se ha podido crear el directorio de trabajo $BASEDIR"; ko_notify; }
+log "Directorio de trabajo $BASEDIR creado"
+
+##################################################
+# OBTENEMOS LA FECHA ACTUAL EN FORMATO ANIO.MES
+##################################################
+# Esto podria ser util en caso de no tener proyectos mavenizados
+# Podria utilizarse la fecha de construccion para el versionado
+ANIOMES=`date +"%y.%m" | sed "s/\.0/\./g"`
+log "ANIOMES=$ANIOMES"
+
+################################################################
+# DESCARGAMOS COPIA DE GIT EN EL DIRECTORIO CREADO
+################################################################
+cd $BASEDIR
+log "Clonamos el repositorio $repositorio_git en el directorio `pwd`"
+REPO_GIT=$repositorio_git
+# $GIT_COMMAND clone $REPO_GIT >> $LOG 2>>$LOG
+$GIT_COMMAND clone $REPO_GIT
+
+##################################################################
+# VERIFICAMOS QUE SE HA CLONADO CORRECTAMENTE EL REPOSITORIO
+##################################################################
+DIR_CREADO=`ls -F | grep '/$'`
+[ -d $DIR_CREADO/.git ] || {
+    MSG="ERR-010 No existe el directorio $DIR_CREADO/.git, no se ha clonado correctamente el repositorio"
+    log "$MSG"
+    ko_notify
+}
+
+MSG="MSG-010 Repositorio Git clonado correctamente. Cambiamos al nuevo directorio: cd $DIR_CREADO"
+log "$MSG"
+cd $DIR_CREADO
+
+########################################################################################
+# DEFINIMOS LA RAMA DE TRABAJO. POR DEFECTO SERA MASTER.
+########################################################################################
+WORK_BRANCH=master
+
+######################################################################
+# TRATAMIENTO DE RAMAS
+######################################################################
+# Tratamiento de ramas: se consideran varias opciones                #
+# - no se recibe parametro asociado a la rama                        #
+# - se recibe rama y es master                                       #
+# - se recibe rama y es distinta de master                           #
+# - se recibe rama y es release-*                                    #
+######################################################################
+# Se hara checkout a la rama master y se fusionaran los cambios
+# tan solo si la rama recibida no es release
+######################################################################
+echo $branch_source_code | egrep "(^origin/release|^release)" && {
+    RELEASE_BRANCH="true"
+    log "La rama recibida corresponde con una Release"
+}
+[ "$RELEASE_BRANCH" ] && WORK_BRANCH=$branch_source_code
+
+####################################
+# CAMBIAMOS A LA RAMA DE TRABAJO
+####################################
+log "Hacemos checkout a la rama $WORK_BRANCH"
+# $GIT_COMMAND checkout $WORK_BRANCH >> $LOG 2>>$LOG || {
+$GIT_COMMAND checkout $WORK_BRANCH || {
+    MSG="ERR-011 No ha sido posible hacer checkout a la rama $WORK_BRANCH"
+    log "$MSG"
+    ko_notify
+}
+
+######################################################################
+# SI SE TRATA DE UNA FEATURE-BRANCH, HACEMOS MERGE A LA RAMA MASTER  #
+######################################################################
+if [ "$RAMA_RECIBIDA" = "true" ] && [ ! "$branch_source_code" = "master" ] && [ ! "$RELEASE_BRANCH" = "true" ]
+then
+    log "Vamos a fusionar la rama $branch_source_code con la rama master"
+    # $GIT_COMMAND merge $branch_source_code -m "[$PROGCODE] Merge branch $branch_source_code into develop" >> $LOG 2>>$LOG || {
+    $GIT_COMMAND merge $branch_source_code -m "[$PROGCODE] Merge branch $branch_source_code into master" || {
+        MSG="ERR-012 No ha sido posible fusionar la rama $branch_source_code con la rama master"
+        log "$MSG"
+        ko_notify
+    }
+    DEVELOP_MUST_BE_PUSHED=0
+else
+    log "No es necesario hacer merge, no se ha recibido rama alternativa a master o se trata de una release"
+    DEVELOP_MUST_BE_PUSHED=1
+fi
+
+################################################################
+# VERIFICAMOS QUE EXISTE EL POM.XML EN EL DIRECTORIO CORRECTO
+################################################################
+log "Verificando que existe el pom.xml en el directorio $directorio_pom"
+[ -f $directorio_pom/pom.xml ] || {
+    MSG="ERR-020 No existe el fichero pom.xml en el directorio $directorio_pom, no es posible continuar, no se trata de un proyecto Maven"
+    log "$MSG"
+    ko_notify
+}
+log "Cambiamos al directorio en el que se ubica el pom.xml: cd $directorio_pom"
+cd $directorio_pom
+
+##################################################################################
+# OBTENEMOS LAS COORDENADAS Y TECNOLOGIA DEL PROYECTO MAVEN QUE VAMOS A CONSTRUIR
+##################################################################################
+log "Obtenemos las coordenadas del proyecto Maven"
+CURRENT_PROJECT_VERSION=`$MVN_COMMAND org.apache.maven.plugins:maven-help-plugin:2.2:evaluate -Dexpression=project.version | grep -Ev '(^\[|Download\w+:)'` &&
+CURRENT_PROJECT_GROUPID=`$MVN_COMMAND org.apache.maven.plugins:maven-help-plugin:2.2:evaluate -Dexpression=project.groupId | grep -Ev '(^\[|Download\w+:)'` &&
+CURRENT_PROJECT_ARTIFACTID=`$MVN_COMMAND org.apache.maven.plugins:maven-help-plugin:2.2:evaluate -Dexpression=project.artifactId | grep -Ev '(^\[|Download\w+:)'` &&
+TECHNOLOGY_TYPE=`$MVN_COMMAND org.apache.maven.plugins:maven-help-plugin:2.2:evaluate -Dexpression=project.parent.artifactId | grep -Ev '(^\[|Download\w+:)'`
+res=$?
+[ $res -eq 0 ] || {
+    MSG="ERR-025 Imposible compilar el proyecto Maven, no es posible obtener las coordenadas"
+    log "$MSG"
+    ko_notify
+}
+log "Numero de version obtenido del proyecto Maven = $CURRENT_PROJECT_VERSION"
+log "GroupId obtenido del proyecto Maven = $CURRENT_PROJECT_GROUPID"
+log "ArtifactId obtenido del proyecto Maven = $CURRENT_PROJECT_ARTIFACTID"
+log "Tecnologia obtenida: $TECHNOLOGY_TYPE"
+
+################################################################
+# SABEMOS YA LA APLICACION, COORDENADAS DEL COMPONENTE,
+# REPOSITORIO GIT Y TECNOLOGIA. ES MOMENTO DE
+# CREAR O VALIDAR QUE EXISTE ESTE ARTEFACTO EN LA BDD DE PDS
+################################################################
+# log "Aseguramos la existencia del artefacto en PDS"
+# curl -s -H "Content-Type: application/json" \
+#     $PROTOCOL_PDS://$HOST_PDS:$PORT_PDS$END_POINT_PDS_NEW_ARTIFACT \
+#     -d '{"application": "'$aplicacion'", "component_group_id": "'$CURRENT_PROJECT_GROUPID'", "component_artifact_id": "'$CURRENT_PROJECT_ARTIFACTID'", "repository_git": "'$repositorio_git'", "technology_type": "'$TECHNOLOGY_TYPE'", "pom_directory": "'$directorio_pom'"}' -X POST || {
+#         MSG="ERR-047 No ha sido posible crear el artefacto en PDS"
+#         log "$MSG"
+#         ko_notify
+#     }
+# log "Artefacto registrado en PDS: ok"
+
+#####################################################################################
+# HACEMOS EL TRATAMIENTO PARA DETERMINAR LA NUEVA VERSION DEL ARTEFACTO A CREAR
+#####################################################################################
+log "En caso de que exista, eliminamos la cadena -SNAPSHOT"
+PROJECT_VERSION_RELEASE=`echo $CURRENT_PROJECT_VERSION | sed -e 's/-SNAPSHOT//'`
+log "Verificamos que la version obtenida $PROJECT_VERSION_RELEASE cumple la expresion regular"
+echo $PROJECT_VERSION_RELEASE | egrep "^[0-9]{1,}\.[0-9]{1,}\.[0-9]{1,}$"
+res=$?
+[ $res -ne 0 ] && {
+    log "Es probable que estemos tratando una version modificada del tipo 1.0.0-B23"
+    PROJECT_VERSION_RELEASE=`echo $CURRENT_PROJECT_VERSION | awk -F-B '{ print $1 }'`
+    echo $PROJECT_VERSION_RELEASE | egrep "^[0-9]{1,}\.[0-9]{1,}\.[0-9]{1,}$" || {
+        MSG="ERR-030 La version del pom no corresponde con el patron establecido: [0-9].[0-9].[0-9]"
+        log "$MSG"
+        ko_notify
+    }
+}
+MAJOR=`echo $PROJECT_VERSION_RELEASE | awk -F. '{ print $1 }'`
+MINOR=`echo $PROJECT_VERSION_RELEASE | awk -F. '{ print $2 }'`
+PATCH=`echo $PROJECT_VERSION_RELEASE | awk -F. '{ print $3 }'`
+log "Major = $MAJOR, Minor = $MINOR, Patch = $PATCH"
+
+######################################################################################
+# HACEMOS EL CALCULO PARA OBTENER LA VERSION DE PATCH SI TENEMOS UNA RAMA HOTFIX
+######################################################################################
+# [ "$HOTFIX_BRANCH" ] && {
+#     log "Debemos modificar el Patch, estamos tratando un hotfix"
+#     FILTER="^refs\/tags\/$MAJOR\.$MINOR\.[^0]"
+#     let PATCH=`$GIT_COMMAND for-each-ref --sort=taggerdate --format '%(refname) %(taggerdate)' refs/tags | \
+#         egrep $FILTER | tail -1 | awk -F-B '{ print $1 }' | sed -e "s/refs\/tags\/$MAJOR\.$MINOR\.//"`+1
+#     log "Nuevo Patch calculado = $PATCH"
+# }
+
+############################################################
+# CALCULO Y ASIGNACION DE NUEVAS VERSIONES CALCULADAS
+############################################################
+# NEXT_BUILD_NUMBERS=`curl -s $PROTOCOL_PDS://$HOST_PDS:$PORT_PDS$END_POINT_PDS_NEXT_BUILD_NUMBER/$aplicacion/$CURRENT_PROJECT_GROUPID/$CURRENT_PROJECT_ARTIFACTID/`
+# log "Resultado NEXT_BUILD_NUMBERS PDS = $NEXT_BUILD_NUMBERS"
+# NEW_VERSION_APLICACION=`echo $NEXT_BUILD_NUMBERS | awk -F: '{ print $1 }'`
+NEW_VERSION_COMPONENTE=$BUILD_NUMBER
+PROJECT_VERSION_RELEASE=$MAJOR.$MINOR.$PATCH
+# APPLICATION_VERSION_RELEASE="$PROJECT_VERSION_RELEASE-B$NEW_VERSION_APLICACION"
+COMPONENT_VERSION_RELEASE="$PROJECT_VERSION_RELEASE-B$NEW_VERSION_COMPONENTE"
+# log "Versión obtenida para nueva aplicación: $APPLICATION_VERSION_RELEASE"
+log "Versión obtenida para nuevo componente: $COMPONENT_VERSION_RELEASE"
+
+############################################################################
+# ANTES DE LANZAR LA COMPILACION CON MAVEN, TENEMOS QUE REALIZAR LA CARGA
+# DE LA INFORMACION EN LA BASE DE DATOS DEL SISTEMA PDS
+############################################################################
+# changelog=`echo $changelog | awk '{ print $1 }'`
+# DATA_PAYLOAD='{"application": "'$aplicacion'", "group_id": "'$CURRENT_PROJECT_GROUPID'", "artifact_id": "'$CURRENT_PROJECT_ARTIFACTID'", "created_from_branch": "'$branch_source_code_original'", "app_version": "'$APPLICATION_VERSION_RELEASE'", "art_version": "'$COMPONENT_VERSION_RELEASE'", "build_url": "'$URL_BUILD_JENKINS'", "changelog": "'$changelog'", "email": "'$email'"}'
+# log "DATA_PAYLOAD=$DATA_PAYLOAD"
+# RETURN_CODE=`curl -s -w '%{http_code}' -H "Content-Type: application/json" \
+#     $PROTOCOL_PDS://$HOST_PDS:$PORT_PDS$END_POINT_PDS_CREATE_NEW_VERSION \
+#     -d "$DATA_PAYLOAD" \
+#     -X POST`
+# if [ "$RETURN_CODE" = "201" ]; then
+#     log "Version $APPLICATION_VERSION_RELEASE creada correctamente para la aplicacion $aplicacion"
+# else
+#     MSG="ERR-031 Error al crear la version $APPLICATION_VERSION_RELEASE para la aplicacion $aplicacion"
+#     log "$MSG"
+#     ko_notify
+# fi
+
+################################################################
+# VERIFICANDO QUE EL TAG QUE QUEREMOS CREAR NO EXISTE
+################################################################
+ETIQUETA="$COMPONENT_VERSION_RELEASE"
+log "Verificando que la etiqueta $ETIQUETA no existe en Git"
+$GIT_COMMAND tag | grep -Fx $ETIQUETA
+res=$?
+if [ $res -eq 0 ]; then
+    MSG="ERR-035 Ya existe el tag $COMPONENT_VERSION_RELEASE creado en Git, no podemos crearlo de nuevo"
+    log "$MSG"
+    ko_notify
+fi
+
+#############################################################################
+# CREAMOS EL TAG EN CASO DE QUE NO SE DESEEN SUBIR LOS FICHEROS MODIFICADOS
+#############################################################################
+if [ "$upload_modified_files" = "true" ]; then
+    log "Se desean subir los ficheros modificados"
+else
+    log "No se quieren subir los ficheros modificados, creamos el tag antes de realizar modificaciones en los ficheros"
+    $GIT_COMMAND tag -a "$ETIQUETA" -m "[$PROGCODE] Componente: $componente, Version: $COMPONENT_VERSION_RELEASE" >> $LOG 2>>$LOG
+fi
+
+####################################################################
+# CREAMOS EL BRANCH EN EL QUE HAREMOS LA MODIFICACION DE LA VERSION
+####################################################################
+branch=rc_$COMPONENT_VERSION_RELEASE
+log "Creacion del branch $branch"
+# $GIT_COMMAND branch $branch >> $LOG 2>>$LOG
+$GIT_COMMAND branch $branch
+log "Haciendo checkout al branch $branch"
+# $GIT_COMMAND checkout $branch >> $LOG 2>>$LOG
+$GIT_COMMAND checkout $branch
+
+#########################################
+# VERIFICAMOS QUE ESTAMOS EN EL BRANCH
+#########################################
+log "Verificamos que nos encontramos en el branch: $branch"
+$GIT_COMMAND branch | grep '*' | grep "$branch"
+res=$?
+if [ ! $res -eq 0 ]; then
+    MSG="ERR-040 No ha sido posible crear el branch y hacer checkout"
+    log "$MSG"
+    ko_notify
+fi
+
+################################################################
+# ACTUALIZAMOS LA VERSION DE POM.XML
+################################################################
+log "Actualizacion del pom.xml con la nueva version $COMPONENT_VERSION_RELEASE"
+# $MVN_COMMAND -o org.codehaus.mojo:versions-maven-plugin:2.2:set \
+#     -DnewVersion=$COMPONENT_VERSION_RELEASE -DgenerateBackupPoms=false >> $LOG 2>>$LOG
+$MVN_COMMAND org.codehaus.mojo:versions-maven-plugin:2.5:set \
+    -DnewVersion=$COMPONENT_VERSION_RELEASE -DgenerateBackupPoms=false
+
+################################################################
+# VERIFICAMOS DE FORMA SIMPLE QUE SE HA ACTUALIZADO LA VERSION
+################################################################
+log "Verificando que el pom.xml se ha actualizado correctamente"
+grep 'pom.xml' -e "<version>$COMPONENT_VERSION_RELEASE</version>"
+res=$?
+if [ ! $res -eq 0 ]; then
+    MSG="ERR-045 No se ha modificado correctamente la version el pom.xml del proyecto"
+    log "$MSG"
+    ko_notify
+fi
+MSG="MSG-020 Version del artefacto Maven actualizada de forma correcta"
+log "$MSG"
+
+################################################################
+# SEGUN EL PROYECTO HABRA QUE ACTUALIZAR UNOS FICHEROS U OTROS
+# EL OBJETIVO ES ALINEAR VERSIONES
+################################################################
+case "$TECHNOLOGY_TYPE" in
+javascript)
+    # Sabemos que en los proyectos JS debe existir el fichero package.json
+    log "Se trata de un proyecto JavaScript. Actualizamos la version del proyecto modificando el package.json"
+    # Este fichero se encuentra en el directorio anterior al del pom.xml
+    cd ..
+    # $NPM_COMMAND version --no-git-tag-version $COMPONENT_VERSION_RELEASE >> $LOG 2>>$LOG || {
+    $NPM_COMMAND version --no-git-tag-version $COMPONENT_VERSION_RELEASE || {
+        MSG="ERR-047 No se ha modificado correctamente la version del packaje.json"
+        log "$MSG"
+        ko_notify
+    }
+    # Si se desean subir los ficheros modificados, hay que notificarlo a Git
+    [ "$upload_modified_files" = "true" ] && $GIT_COMMAND add package.json
+    cd -
+    ;;
+wordpress)
+    log "Se trata de un proyecto WordPress, no requiere tratamiento especial"
+    ;;
+nginx-phpfpm)
+    log "Se trata de un proyecto nginx-phpfpm, no requiere tratamiento especial"
+    ;;
+*)
+   ;;
+esac
+
+################################################################
+# SI SE DESEAN SUBIR LOS FICHEROS MODIFICADOS                  #
+# HACEMOS COMMIT Y CREAMOS EL TAG CON EL POM.XML MODIFICADO    #
+################################################################
+if [ "$upload_modified_files" = "true" ]; then
+    log "Hacemos commit con los ficheros modificados y creamos el tag"
+    # $GIT_COMMAND add pom.xml >> $LOG 2>>$LOG
+    # $GIT_COMMAND commit -m "[$PROGCODE] Estableciendo la version $COMPONENT_VERSION_RELEASE para el componente $componente" >> $LOG 2>>$LOG
+    # $GIT_COMMAND tag -a "$ETIQUETA" -m "[$PROGCODE] Componente: $componente, Version: $COMPONENT_VERSION_RELEASE" >> $LOG 2>>$LOG
+    $GIT_COMMAND add pom.xml
+    $GIT_COMMAND commit -m "[$PROGCODE] Estableciendo la version $COMPONENT_VERSION_RELEASE para el componente $componente"
+    $GIT_COMMAND tag -a "$ETIQUETA" -m "[$PROGCODE] Componente: $componente, Version: $COMPONENT_VERSION_RELEASE"
+fi
+
+################################################################
+# AHORA DEBEMOS LANZAR LA COMPILACION DEL PROYECTO MAVEN
+################################################################
+log "Lanzamos la construccion del proyecto Maven"
+# $MVN_COMMAND clean deploy >> $LOG 2>>$LOG
+BUILD_RESULT="$($MVN_COMMAND clean deploy)"
+res=$?
+if [ $res -eq 0 ]; then
+    #Mostramos el resultado por consola y registramos en el log_file
+    echo "$BUILD_RESULT" && echo "$BUILD_RESULT" >> $SUMMARY_FILE
+    MSG="MSG-073 Compilacion del proyecto terminada con exito!!!"
+    log "$MSG"
+else
+    #Mostramos el resultado por consola y registramos en el log_file
+    echo "$BUILD_RESULT" && echo "$BUILD_RESULT" >> $SUMMARY_FILE
+    MSG="ERR-054 Compilacion del proyecto erronea!!, abortamos el proceso!!"
+    log "$MSG"
+    ko_notify
+fi
+
+###############################################################################################
+# VERIFICAMOS QUE SE HA ACTUALIZADO NEXUS CON EL BINARIO CONSTRUIDO (ZIP, IMAGEN DOCKER, ETC) #
+###############################################################################################
+case "$TECHNOLOGY_TYPE" in
+nginx-phpfpm)
+    log "Se trata de un proyecto nginx-phpfpm, cambia la forma de obtener la URL para nexus"
+    URL_ARTIFACT_NEXUS="docker-repo.srv.xebialabs.in/nginx-phpfpm/$CURRENT_PROJECT_ARTIFACTID:$COMPONENT_VERSION_RELEASE"
+    log "URL obtenida para el artefacto en Nexus = $URL_ARTIFACT_NEXUS"
+    ;;
+voting-app)
+    log "Se trata del proyecto voting-app, cambia la forma de obtener la URL para nexus"
+    URL_ARTIFACT_NEXUS="lyhsoft-registry:8084/$CURRENT_PROJECT_ARTIFACTID:$COMPONENT_VERSION_RELEASE"
+    log "URL obtenida para el artefacto en Nexus = $URL_ARTIFACT_NEXUS"
+    ;;
+calculator-app)
+    log "Se trata del proyecto calculator-app, cambia la forma de obtener la URL para nexus"
+    URL_ARTIFACT_NEXUS="lyhsoft-registry:8084/$CURRENT_PROJECT_ARTIFACTID:$COMPONENT_VERSION_RELEASE"
+    log "URL obtenida para el artefacto en Nexus = $URL_ARTIFACT_NEXUS"
+    ;;
+*)
+    URL_ARTIFACT_NEXUS=`echo "$BUILD_RESULT" | grep Uploaded | egrep "\.war|\.zip|\.jar|\.aar"  | awk -F'Uploaded to nexus: '  '{ print $2 }' | awk '{ print $1 }'`
+    log "URL obtenida para el artefacto en Nexus = $URL_ARTIFACT_NEXUS"
+    if curl --output /dev/null --silent --head --fail "$URL_ARTIFACT_NEXUS"; then
+        MSG="MSG-074 Chequeo URL existente: OK!"
+        log "$MSG"
+    else
+        MSG="ERR-055 Chequeo URL existente: KO!, abortamos el proceso!!"
+        log "$MSG"
+        ko_notify
+    fi
+   ;;
+esac
+
+##########################################################################
+# SI SE HA RECIBIDO UN FEATURE BRANCH, ES NECESARIO HACER PUSH DE LA RAMA
+# MASTER CON LOS CAMBIOS INTEGRADOS.
+# ESTO ES ASI PORQUE EL PROCESO DE CONSTRUCCIÓN A FINALIZADO CON ÉXITO
+##########################################################################
+[ $DEVELOP_MUST_BE_PUSHED -eq 0 ] && {
+    log "Hacemos checkout a la rama master y push a origin"
+    # $GIT_COMMAND checkout develop >> $LOG 2>>$LOG && $GIT_COMMAND push origin develop >> $LOG 2>>$LOG
+    $GIT_COMMAND checkout master && $GIT_COMMAND push origin master || {
+        MSG="ERR-055 Error al hacer push de la rama master, abortamos el proceso!!"
+        log "$MSG"
+        ko_notify
+    }
+}
+
+##########################################################################
+# SUBIMOS LOS TAGS QUE SE HAN CREADO
+##########################################################################
+log "Subimos los tags creados"
+# $GIT_COMMAND push --tags >> $LOG 2>>$LOG
+$GIT_COMMAND push --tags
+
+##########################################################################
+# CALCULAMOS EL TIEMPO DE DURACION DE LA BUILD
+##########################################################################
+finish_time=$(date +%s) 
+duration=$((finish_time - start_time))
+
+#################################################################################################
+# LA COMPILACION DEL PROYECTO MAVEN HA TERMINADO CON EXITO
+# AHORA HAY QUE ACTUALIZAR EL NIVEL DE MADUREZ DE LA PIEZA DE SOFTWARE QUE HEMOS CONSTRUIDO
+#################################################################################################
+# log "Actualizamos el nivel de madurez del artefacto en la BDD de PDS"
+# curl -s -H "Content-Type: application/json" \
+#     $PROTOCOL_PDS://$HOST_PDS:$PORT_PDS$END_POINT_PDS_UPDATE_ML_APPLICATION \
+#     -d '{"application_name": "'$aplicacion'", "component_name": "'$componente'", "application_version": "'$APPLICATION_VERSION_RELEASE'", "duration": "'$duration'", "state_application_version_id": "build_ok", "build_url": "'$URL_BUILD_JENKINS'", "repository_url": "'$URL_ARTIFACT_NEXUS'"}' -X POST || {
+#         MSG="ERR-049 No ha sido posible actualizar el nivel de madurez en PDS"
+#         log "$MSG"
+#         ko_notify
+#     }
+# log "Nivel de madurez actualizado en PDS: ok"
+
+MSG="MSG-035 Versionado finalizado de forma correcta"
+log "$MSG"
+
+##########################################################################
+# GENERAMOS INFORMACIÓN RELACIONADA CON LOS ARTEFACTOS QUE VAMOS A CREAR #
+##########################################################################
+MSG="MSG-040 Generamos ahora información relacionada con el artefacto para alimentar el deployment package"
+log "$MSG"
+DIR_BASE_FICHERO_YAML={{ dir_work }}/yaml-maker/yamls-cfg-files/
+FICHERO_YAML=${DIR_BASE_FICHERO_YAML}/${aplicacion}-${componente}-${COMPONENT_VERSION_RELEASE}.cfg
+FICHERO_LOG=${DIR_BASE_FICHERO_YAML}/${aplicacion}-${componente}-${COMPONENT_VERSION_RELEASE}.log
+[ -f ${FICHERO_YAML} ] && rm ${FICHERO_YAML}
+[ -f ${FICHERO_LOG} ] && rm ${FICHERO_LOG}
+echo "GIT_REPO=${repositorio_git}" >> ${FICHERO_YAML}
+echo "BUILD_URL=${BUILD_URL}" >> ${FICHERO_YAML}
+COMMIT_ID=`${GIT_COMMAND} log --format="%H" -n 1`
+echo "COMMIT_ID=${COMMIT_ID}" >> ${FICHERO_YAML}
+${GIT_COMMAND} log -n 10 --pretty=format:"%s" >> ${FICHERO_LOG}
+chmod +x ${FICHERO_YAML}
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+envio_email "BUILD CORRECTA"
+
+exit 0
+
+################################################################################
+# Nueva linea de estudio para obtener la version de JIRA
+################################################################################
+# curl -s -u "User:Password" -H "Content-Type: application/json" \
+#    http://servidorjira/projects/tag-manager/versions.json | \
+#    jq '.versions[] | {nombre: .name, estado: .status}'
+################################################################################

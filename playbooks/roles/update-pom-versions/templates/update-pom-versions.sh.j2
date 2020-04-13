@@ -1,0 +1,142 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=UPVER
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/update-pom-versions.cfg
+
+#########################
+# THE COMMAND LINE HELP #
+#########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -v version"
+    echo
+}
+
+###############################
+# FUNCIONES
+###############################
+
+###############################
+# 1.- PARA ESCRIBIR LOGS
+###############################
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> "$PROGCODE" "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":v:" opt; do
+    case $opt in
+        v)
+            log "Version received ... -v was triggered, Parameter: $OPTARG"
+            VERSION=$OPTARG
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, aborting ..."
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, aborting ..."
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$VERSION" ]
+then
+    MSG="ERR-005 Version must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+MSG="MSG-005 All parameters received" && log "$MSG"
+
+###################################
+#    CONFIGURACION PATH DE TRABAJO
+###################################
+BASEDIR=$DIR_WORK_TEMP
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+[ -d $BASEDIR ] && {
+    log "$BASEDIR exists ..."
+    rm -fr $BASEDIR || { log "Error deleting dir $BASEDIR"; exit 1; }
+    log "Dir $BASEDIR deleted"
+} || log "$BASEDIR does not exist"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+if [ ! -d "$BASEDIR" ]; then
+    # El directorio de trabajo no existe
+    mkdir -p $BASEDIR || { log "Can not create $BASEDIR"; exit 1; }
+    log "Dir $BASEDIR created"
+fi
+
+#####################################
+# CAMBIAMOS AL DIRECTORIO DE TRABAJO
+#####################################
+cd $BASEDIR
+
+################################################################
+# DESCARGAMOS COPIA DE GIT EN EL DIRECTORIO CREADO
+################################################################
+
+for GIT_REPO in "${APPLICATION_GIT_REPO[@]}"
+do
+    cd $BASEDIR && rm -fr *
+    log "Clonamos el repositorio $GIT_REPO en el directorio `pwd`"
+    $GIT_COMMAND clone $GIT_REPO
+
+    ##################################################################
+    # VERIFICAMOS QUE SE HA CLONADO CORRECTAMENTE EL REPOSITORIO
+    ##################################################################
+    DIR_CREADO=`ls -F | grep '/$'`
+    [ -d $DIR_CREADO/.git ] || {
+        MSG="ERR-010 No existe el directorio $DIR_CREADO/.git, no se ha clonado correctamente el repositorio"
+        log "$MSG"
+    }
+
+    MSG="MSG-010 Repositorio Git clonado correctamente. Cambiamos al nuevo directorio: cd $DIR_CREADO"
+    log "$MSG"
+    cd $DIR_CREADO
+
+    ################################################################
+    # ACTUALIZAMOS LA VERSION DE POM.XML
+    ################################################################
+    log "Actualizacion del pom.xml con la nueva version $VERSION-SNAPSHOT"
+    mvn org.codehaus.mojo:versions-maven-plugin:2.1:set \
+        -DnewVersion="$VERSION-SNAPSHOT" -DgenerateBackupPoms=false
+
+    log "Updating the new changes ..."
+    $GIT_COMMAND add pom.xml; $GIT_COMMAND commit -m "New version set"; $GIT_COMMAND push
+
+done
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+exit 0

@@ -1,0 +1,152 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=YAMLMK
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/yaml-maker.cfg
+
+#########################
+# THE COMMAND LINE HELP #
+#########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -a application"
+    echo "   -m microservice"
+    echo "   -v version"
+    echo
+}
+
+###############################
+# FUNCIONES
+###############################
+
+###############################
+# 1.- PARA ESCRIBIR LOGS
+###############################
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> "$PROGCODE" "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":a:m:v:" opt; do
+    case $opt in
+        a)
+            log "Application received ... -a was triggered, Parameter: $OPTARG"
+            APPLICATION=$OPTARG
+            ;;
+        m)
+            log "Microservice received ... -m was triggered, Parameter: $OPTARG"
+            MICROSERVICE=$OPTARG
+            ;;
+        v)
+            log "Version received ... -v was triggered, Parameter: $OPTARG"
+            VERSION=$OPTARG
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, aborting ..."
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, aborting ..."
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$APPLICATION" ]
+then
+    MSG="ERR-005 Application must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ -z "$MICROSERVICE" ]
+then
+    MSG="ERR-005 Microservice must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ -z "$VERSION" ]
+then
+    MSG="ERR-005 Version must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+MSG="MSG-005 All parameters received" && log "$MSG"
+
+###################################
+#    CONFIGURACION PATH DE TRABAJO
+###################################
+BASEDIR=$DIR_WORK_TEMP/$APPLICATION-$MICROSERVICE-$VERSION
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+[ -d $BASEDIR ] && {
+    log "$BASEDIR exists ..."
+    rm -fr $BASEDIR || { log "Error deleting dir $BASEDIR"; exit 1; }
+    log "Dir $BASEDIR deleted"
+} || log "$BASEDIR does not exist"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+if [ ! -d "$BASEDIR" ]; then
+    # El directorio de trabajo no existe
+    mkdir -p $BASEDIR || { log "Can not create $BASEDIR"; exit 1; }
+    log "Dir $BASEDIR created"
+fi
+
+#####################################
+# CAMBIAMOS AL DIRECTORIO DE TRABAJO
+#####################################
+cd $BASEDIR
+
+####################################################################
+# COPIAMOS LOS FICHEROS DE LOG Y TRAZABILIDAD AL DIRECTORIO ACTUAL #
+####################################################################
+cp $DIR_CFG_FILES/$APPLICATION-$MICROSERVICE-$VERSION.log $BASEDIR/file
+. $DIR_CFG_FILES/$APPLICATION-$MICROSERVICE-$VERSION.cfg
+
+FILE_MANIFEST="$DIR_BASE/yamls/$APPLICATION-$MICROSERVICE.yaml"
+
+[ -f $FILE_MANIFEST ] || {
+    MSG="ERR-015 File $FILE_MANIFEST doesn't exist"
+    log "$MSG"
+    exit 1
+}
+
+log "Copying new manifest file ..."
+cp $FILE_MANIFEST $BASEDIR/application.yaml
+
+xl apply -f application.yaml --values version=$VERSION,gitRepo=$GIT_REPO,buildUrl=$BUILD_URL,commitId=$COMMIT_ID
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+exit 0

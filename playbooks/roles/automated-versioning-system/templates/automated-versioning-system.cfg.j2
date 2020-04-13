@@ -1,0 +1,25 @@
+##############################
+# Variables de configuracion #
+##############################
+
+DIR_WORK={{ dir_work }}
+DIR_BASE={{ dir_base }}
+DIR_LOG={{ dir_log }}
+DIR_WORK_TEMP=$DIR_WORK/automated-versioning-system
+LOG=$DIR_LOG/automated-versioning-system.log
+BASE_DIR_PROJECTS=$DIR_WORK_TEMP
+MVN_COMMAND={{ mvn_command }}
+GIT_COMMAND={{ git_command }}
+NPM_COMMAND={{ npm_command }}
+
+##############################
+# Variables API Rest PDS     #
+##############################
+
+PROTOCOL_PDS={{ protocol_pds }}
+HOST_PDS={{ host_pds }}
+PORT_PDS={{ port_pds }}
+END_POINT_PDS_NEW_ARTIFACT=/api/create-new-artifact/
+END_POINT_PDS_UPDATE_ML_APPLICATION=/api/update-ml-application/
+END_POINT_PDS_NEXT_BUILD_NUMBER=/api/get-next-build-number
+END_POINT_PDS_CREATE_NEW_VERSION=/api/create-new-application-version/

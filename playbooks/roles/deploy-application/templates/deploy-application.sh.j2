@@ -1,0 +1,203 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=DEAPP
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/deploy-application.cfg
+
+#########################
+# THE COMMAND LINE HELP #
+#########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -a Application name"
+    echo "   -v Application version"
+    echo "   -e Environment"
+    echo
+}
+
+###############################
+# FUNCIONES
+###############################
+
+###############################
+# 1.- PARA ESCRIBIR LOGS
+###############################
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> DEAPP "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+#############################################################################################
+# 2.- PARA OBTENER EL NOMBRE DEL PROGRAMA Y LA LINEA EN QUE SE PRODUJO EL ERROR
+#############################################################################################
+function error_exit
+{
+    log "${PROGNAME}: ${1:-"Unknown Error"}"
+    exit 1
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+while getopts ":a:v:e:" opt; do
+    case $opt in
+        a)
+            log "Application received ... -a was triggered, Parameter: $OPTARG"
+            application=$OPTARG
+            ;;
+        v)
+            log "Version received ... -v was triggered, Parameter: $OPTARG"
+            version=$OPTARG
+            ;;
+        e)
+            log "Environment received ... -e was triggered, Parameter: $OPTARG"
+            environment=$OPTARG
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, aborting!"
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, aborting!"
+            exit 1
+           ;;
+    esac
+done
+
+if [ -z "$application" ]
+then
+    MSG="ERR-005 Application must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ -z "$version" ]
+then
+    MSG="ERR-005 Version must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ -z "$environment" ]
+then
+    MSG="ERR-005 Environment must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+MSG="MSG-005 All parameters have been received" && log "$MSG"
+
+###################################
+#    CONFIGURACION PATH DE TRABAJO
+###################################
+BASEDIR=$DIR_WORK_TEMP/$application-$version
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+[ -d $BASEDIR ] && {
+    log "Existe el directorio de trabajo $BASEDIR"
+    rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR eliminado"
+} || log "No existe el directorio de trabajo $BASEDIR"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+if [ ! -d "$BASEDIR" ]; then
+    # El directorio de trabajo no existe
+    mkdir -p $BASEDIR || { log "No se ha podido crear el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR creado"
+fi
+
+#####################################
+# CAMBIAMOS AL DIRECTORIO DE TRABAJO
+#####################################
+cd $BASEDIR
+
+#################################################################################
+# CONSULTAMOS A PDS, OBTENEMOS Y DESCOMPRIMIMOS EL COMPONENTE DE INFRAESTRUCTURA
+#################################################################################
+log "URL ---> $PROTOCOL_PDS://$HOST_PDS:$PORT_PDS$END_POINT_PDS_GET_URL_ANSIBLE_COMPONENT/$application/$version/infra/"
+URL_ANSIBLE_COMPONENT=`curl -s $PROTOCOL_PDS://$HOST_PDS:$PORT_PDS$END_POINT_PDS_GET_URL_ANSIBLE_COMPONENT/$application/$version/infra/`
+log "URL_ANSIBLE_COMPONENT=$URL_ANSIBLE_COMPONENT"
+echo $URL_ANSIBLE_COMPONENT | grep "ERROR" && {
+    MSG="ERR-010 Infrastructure component doesn't exist in BDD!"
+    log "$MSG"
+    exit 1
+}
+
+#####################################################################
+# VERIFICAMOS QUE EXISTE EL FICHERO REMOTO
+#####################################################################
+if curl --output /dev/null --silent --head --fail "$URL_ANSIBLE_COMPONENT"; then
+    MSG="MSG-074 Checking URL in Nexus: OK!"
+    log "$MSG"
+else
+    MSG="Infrastructure component doesn't exist in Nexus!"
+    log "$MSG"
+    exit 1
+fi
+
+###########################################################
+# DESCARGAMOS, DESCOMPRIMIMOS Y BORRAMOS EL FICHERO REMOTO
+###########################################################
+curl -s $URL_ANSIBLE_COMPONENT --output ansible_component.zip && unzip ansible_component.zip && rm ansible_component.zip
+
+###################################################
+# VERIFICAMOS QUE EXISTE EL PLAYBOOK DE DESPLIEGUE
+###################################################
+[ -e app.yml ] || {
+    MSG="ERR-013 Playbook app.yml doesn't exist!"
+    log "$MSG"
+    exit 1
+}
+
+###################################################
+# INVOCAMOS A ANSIBLE PARA LA EJECUCION DEL SCRIPT
+###################################################
+MSG="MSG-080 Invoking Ansible"
+{% if ansible_config is defined %}
+export ANSIBLE_CONFIG={{ ansible_config }}
+{% endif %}
+
+{% if is_production is defined %}
+case $application in
+    "app-test-ssgg" )
+        log "Activating venv /opt/ansible-venv/bin/activate"
+        source /opt/ansible-venv/bin/activate
+        ;;
+    * )
+        log "Activating venv /opt/ansible/bin/activate"
+        source /opt/ansible/bin/activate
+        ;;
+esac
+{% endif %}
+
+[ -f requirements.yml ] && ansible-galaxy  install -r requirements.yml
+
+ansible-playbook app.yml {% if is_production is defined %}--vault-password-file ${ANSIBLE_VAULT_PASS}{% endif %} {% if inventory is defined %}-i {{ inventory }}{% endif %} -e application=$application -e version=$version -e entorno=$environment
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+exit 0

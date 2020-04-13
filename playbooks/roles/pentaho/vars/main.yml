@@ -1,0 +1,21 @@
+---
+
+pentaho_mysql_host: des.db.srv.vocento.in
+pentaho_mysql_port: 3306
+pentaho_mysql_user: pds
+pentaho_mysql_password: pds
+
+pds_mysql_host: des.db.srv.vocento.in
+pds_mysql_port: 3306
+pds_mysql_name: pds
+pds_mysql_user: pds
+pds_mysql_password: pds
+
+mongodb_host: 10.24.14.218
+mongodb_port: 27017
+mongodb_db: dashboarddb
+mongodb_user: devops
+mongodb_pass: opsdev1
+
+mongodb_bitbucket_user: jclopez
+mongodb_bitbucket_user_encrypted_password: 5NGbLA+r8/mqBL6N1Z7DRg==

@@ -1,0 +1,25 @@
+---
+
+- name: Cargamos las variables del fichero {{ vars_file }} 
+  include_vars: "{{ vars_file }}"
+
+- name: Aseguramos que existen los directorios en remoto antes de ubicar los artefactos
+  file:
+    path: "{{ item }}/{{ artifact_version }}"
+    state: directory
+  with_items: "{{ remote_directories }}"
+
+- name: Descomprimimos el contenido del zip en remoto
+  unarchive:
+    src: /tmp/{{ artifactId }}-{{ artifact_version }}.{{ extension }}
+    dest: "{{ item }}/{{ artifact_version }}"
+  with_items: "{{ remote_directories }}"
+
+- name: Establecemos el enlace simbolico a la version desplegada
+  file:
+    state: link
+    force: yes
+    dest: "{{ item }}/latest"
+    src: "{{ item }}/{{ artifact_version }}"
+  with_items: "{{ remote_directories }}"
+

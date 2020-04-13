@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<udm.DeploymentPackage version="VERSION_DAR" application="webservices">
+  <application />
+  <orchestrator />
+  <satisfiesOkTestManager>false</satisfiesOkTestManager>
+  <satisfiesOkReleaseManager>false</satisfiesOkReleaseManager>
+  <deployables>
+    <axis2.Aar name="/webservices" file="/webservices-WEBSERVICES_VERSION.aar">
+      <tags />
+      <scanPlaceholders>true</scanPlaceholders>
+      <preScannedPlaceholders>true</preScannedPlaceholders>
+      <placeholders />
+      <checksum>WEBSERVICES_VERSION</checksum>
+      <!-- <targetPath>{{axis2.services.directory}}</targetPath> -->
+      <targetFileName>webservices.aar</targetFileName>
+    </axis2.Aar>
+  </deployables>
+  <applicationDependencies />
+  <dependencyResolution>LATEST</dependencyResolution>
+  <undeployDependencies>false</undeployDependencies>
+  <templates />
+  <boundTemplates />
+</udm.DeploymentPackage>

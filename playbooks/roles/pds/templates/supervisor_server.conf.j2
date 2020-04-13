@@ -1,0 +1,12 @@
+[program:uwsgi-runner]
+stdout_logfile={{ logs_uwsgi }}/uwsgi-runner-out.log
+stderr_logfile={{ logs_uwsgi }}/uwsgi-runner-err.log
+logfile_maxbytes=50MB
+logfile_backups=10
+command={{ proj_path_venv }}/bin/uwsgi --ini {{ proj_path_conf }}/{{ proj_name }}_uwsgi.ini
+[program:nginx-runner]
+stdout_logfile={{ logs_nginx }}/nginx-runner-out.log
+stderr_logfile={{ logs_nginx }}/nginx-runner-err.log
+logfile_maxbytes=50MB
+logfile_backups=10
+command=/usr/sbin/nginx -g "daemon off;"

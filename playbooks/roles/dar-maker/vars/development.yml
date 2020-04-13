@@ -1,0 +1,7 @@
+---
+dir_base: /opt/xebialabs/devops-utilities
+dir_work: /var/opt/xebialabs
+dir_log: /var/log/xebialabs
+protocol_pds: http
+host_pds: localhost
+port_pds: 8000

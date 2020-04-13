@@ -1,0 +1,25 @@
+##########################################
+# {{ proj_name }}_uwsgi.ini file
+##########################################
+[uwsgi]
+#########################
+# Django-related settings
+#########################
+# the base directory (full path)
+chdir={{ proj_path_src }}
+# Django's wsgi file
+module={{ proj_name }}.wsgi
+# the virtualenv (full path)
+home={{ proj_path_venv }}
+##########################
+# process-related settings
+##########################
+master=true
+# maximum number of worker processes
+processes=10
+# the socket
+socket={{ proj_path_conf }}/{{ proj_name }}.sock
+# ... with appropriate permissions - may be needed
+chmod-socket=666
+# clear environment on exit
+vacuum=true

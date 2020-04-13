@@ -1,0 +1,7 @@
+---
+
+# URL del repositorio de Nexus de Vocento
+# repository_url: 'https://nexus.srv.vocento.in/repository/maven-releases'
+
+# URL del repositorio local de Nexus
+repository_url: 'http://localhost:8081/nexus/content/repositories/releases'

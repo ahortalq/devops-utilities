@@ -1,0 +1,217 @@
+#!/bin/bash
+
+
+PROGNAME=$(basename $0)
+PROGCODE=UPDPV
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/update-pom-version.cfg
+
+##########################
+# The command line help  #
+##########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -m directorio en el que se ubica el fichero pom.xml"
+    echo "   -g repositorio Git con el código fuente a compilar"
+    echo "   -v nueva version"
+    echo
+}
+
+# Funciones
+# 1.- Para escribir logs
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> $PROGCODE "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+
+# 2.- Para obtener el nombre del programa y la linea en que se produjo el error
+function error_exit
+{
+    log "${PROGNAME}: ${1:-"Unknown Error"}"
+    exit 1
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":m:g:v:" opt; do
+    case $opt in
+        m)
+            log "Recibido el directorio con el pom.xml de Maven ... -m was triggered, Parameter: $OPTARG"
+            directorio_pom=$OPTARG
+            ;;
+        g)
+            log "Recibido el repositorio git ... -g was triggered, Parameter: $OPTARG"
+            repositorio_git=$OPTARG
+            ;;
+        v)
+            log "Recibida la version ... -v was triggered, Parameter: $OPTARG"
+            version=$OPTARG
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, interrumpimos el proceso"
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, interrumpimos el proceso"
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$directorio_pom" ] || [ -z "$repositorio_git" ] || [ -z "$version" ]
+then
+    MSG="ERR-005 No se han facilitado los parametros obligatorios, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+MSG="MSG-005 Se han recibido todos los parametros requeridos"
+log "$MSG"
+
+#####################################################################
+#    CONFIGURACION PATH DE TRABAJO PARA DESCARGA DEL PROYECTO GIT   #
+#####################################################################
+# # Valor de ejemplo (por defecto)
+# /var/opt/vocento/devops-utilities/update_pom_version_312345423
+miliseconds_time=$(date +%s%N)
+BASEDIR=$BASE_DIR_PROJECTS/update_pom_version_$miliseconds_time
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+[ -d $BASEDIR ] && {
+    log "Existe el directorio de trabajo $BASEDIR"
+    rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR eliminado"
+} || log "No existe el directorio de trabajo $BASEDIR"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+mkdir -p $BASEDIR || { log "No se ha podido crear el directorio de trabajo $BASEDIR"; exit 1; }
+log "Directorio de trabajo $BASEDIR creado"
+
+################################################################
+# DESCARGAMOS COPIA DE GIT EN EL DIRECTORIO CREADO
+################################################################
+cd $BASEDIR
+log "Clonamos el repositorio $repositorio_git en el directorio `pwd`"
+REPO_GIT=$repositorio_git
+$GIT_COMMAND clone $REPO_GIT
+
+##################################################################
+# VERIFICAMOS QUE SE HA CLONADO CORRECTAMENTE EL REPOSITORIO
+##################################################################
+DIR_CREADO=`ls -F | grep '/$'`
+[ -d $DIR_CREADO/.git ] || {
+    MSG="ERR-010 No existe el directorio $DIR_CREADO/.git, no se ha clonado correctamente el repositorio"
+    log "$MSG"
+    exit 1
+}
+
+MSG="MSG-010 Repositorio Git clonado correctamente. Cambiamos al nuevo directorio: cd $DIR_CREADO"
+log "$MSG"
+cd $DIR_CREADO
+
+########################################################################################
+# DEFINIMOS LA RAMA DE TRABAJO.
+########################################################################################
+WORK_BRANCH=develop
+
+####################################
+# CAMBIAMOS A LA RAMA DE TRABAJO
+####################################
+log "Hacemos checkout a la rama $WORK_BRANCH"
+$GIT_COMMAND checkout $WORK_BRANCH || {
+    MSG="ERR-011 No ha sido posible hacer checkout a la rama $WORK_BRANCH"
+    log "$MSG"
+    exit 1
+}
+
+################################################################
+# VERIFICAMOS QUE EXISTE EL POM.XML EN EL DIRECTORIO CORRECTO
+################################################################
+log "Verificando que existe el pom.xml en el directorio $directorio_pom"
+[ -f $directorio_pom/pom.xml ] || {
+    MSG="ERR-020 No existe el fichero pom.xml en el directorio $directorio_pom, no es posible continuar, no se trata de un proyecto Maven"
+    log "$MSG"
+    exit 1
+}
+log "Cambiamos al directorio en el que se ubica el pom.xml: cd $directorio_pom"
+cd $directorio_pom
+
+################################################################
+# ACTUALIZAMOS LA VERSION DE POM.XML
+################################################################
+log "Actualizacion del pom.xml con la nueva version $version"
+$MVN_COMMAND -o org.codehaus.mojo:versions-maven-plugin:2.2:set \
+    -DnewVersion=$version -DgenerateBackupPoms=false
+
+################################################################
+# VERIFICAMOS DE FORMA SIMPLE QUE SE HA ACTUALIZADO LA VERSION
+################################################################
+log "Verificando que el pom.xml se ha actualizado correctamente"
+grep 'pom.xml' -e "<version>$version</version>"
+res=$?
+if [ ! $res -eq 0 ]; then
+    MSG="ERR-045 No se ha modificado correctamente la version el pom.xml del proyecto"
+    log "$MSG"
+    exit 1
+fi
+MSG="MSG-020 Version del artefacto Maven actualizada de forma correcta"
+log "$MSG"
+
+################################################################
+# HACEMOS COMMIT Y SUBIMOS LOS FICHEROS MODIFICADOS            #
+################################################################
+log "Hacemos commit con los ficheros modificados y push"
+$GIT_COMMAND add pom.xml
+$GIT_COMMAND commit -m "[$PROGCODE] Estableciendo la version $version"
+$GIT_COMMAND push origin develop || {
+    MSG="ERR-055 Error al hacer push de la rama develop, abortamos el proceso!!"
+    log "$MSG"
+    exit 1
+}
+
+##########################################################################
+# CALCULAMOS EL TIEMPO DE DURACION DE LA BUILD
+##########################################################################
+finish_time=$(date +%s) 
+duration=$((finish_time - start_time))
+
+MSG="MSG-035 Version actualizada de forma correcta"
+log "$MSG"
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+cd $BASE_DIR_PROJECTS && rm -fr update_pom_version_$miliseconds_time
+
+exit 0
+
+################################################################################
+# Nueva linea de estudio para obtener la version de JIRA
+################################################################################
+# curl -s -u "User:Password" -H "Content-Type: application/json" \
+#    http://servidorjira/projects/tag-manager/versions.json | \
+#    jq '.versions[] | {nombre: .name, estado: .status}'
+################################################################################

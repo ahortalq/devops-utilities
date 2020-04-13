@@ -1,0 +1,14 @@
+---
+dir_base: /jenkins2/workspace/devops-utilities
+dir_work: /tmp
+dir_log: /jenkins2/workspace/devops-utilities
+mvn_command: /bin/mvn
+git_command: /bin/git
+nexus_version: 3
+protocol_nexus: https
+host_nexus: nexus.srv.vocento.in
+port_nexus: 443
+url_nexus_repository: /repository/maven-releases
+url_nexus_repository_v3: maven-releases
+user_nexus: jclopez
+password_nexus: _Kbr4nt0s!

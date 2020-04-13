@@ -1,0 +1,10 @@
+---
+dir_base: /opt/xebialabs/devops-utilities
+dir_work: /var/opt/xebialabs
+dir_log: /var/log/xebialabs
+mvn_command: /usr/bin/mvn
+git_command: /usr/bin/git
+npm_command: /home/jcla/.nvm/versions/node/v6.10.2/bin/npm
+protocol_pds: http
+host_pds: localhost
+port_pds: 8000

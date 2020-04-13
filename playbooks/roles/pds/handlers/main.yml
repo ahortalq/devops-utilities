@@ -1,0 +1,10 @@
+---
+
+- name: restart supervisor
+  supervisorctl:
+    name: "{{ item }}"
+    state: restarted
+  with_items:
+    - uwsgi-runner
+    - nginx-runner
+  become: true

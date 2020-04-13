@@ -1,0 +1,36 @@
+# xl apply -f vote.yaml --values version=32.0.0-B6
+---
+apiVersion: xl-deploy/v1
+kind: Applications
+spec:
+- name: Applications/Applications
+  type: core.Directory
+- name: Applications/Applications/application-voting-app-docker
+  type: core.Directory
+- name: Applications/Applications/application-voting-app-docker/vote-voting-app-docker
+  type: udm.Application
+- name: !format Applications/Applications/application-voting-app-docker/vote-voting-app-docker/%version%
+  type: udm.DeploymentPackage
+  orchestrator:
+  - sequential-by-dependency
+  deployables:
+  - name: vote-container
+    type: docker.ContainerSpec
+    containerName: vote
+    image: !format lyhsoft-registry:8084/vote:%version%
+    networks:
+    - network-voting-app
+    portBindings:
+    - name: vote-port
+      type: docker.PortSpec
+      hostPort: "5000"
+      containerPort: "80"
+  changeLog: !source file
+  gitRepo: !value gitRepo
+  buildUrl: !value buildUrl
+  commitId: !value commitId
+  undeployDependencies: true
+  applicationDependencies:
+    redis-voting-app-docker: ""
+    network-voting-app-docker: ""
+  dependencyResolution: EXISTING

@@ -1,0 +1,223 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=DARMK
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/dar-maker.cfg
+
+#########################
+# THE COMMAND LINE HELP #
+#########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -a application"
+    echo "   -v version"
+    echo
+}
+
+###############################
+# FUNCIONES
+###############################
+
+###############################
+# 1.- PARA ESCRIBIR LOGS
+###############################
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> "$PROGCODE" "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":a:v:" opt; do
+    case $opt in
+        a)
+            log "Application received ... -a was triggered, Parameter: $OPTARG"
+            APPLICATION=$OPTARG
+            ;;
+        v)
+            log "Version received ... -v was triggered, Parameter: $OPTARG"
+            VERSION=$OPTARG
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, aborting ..."
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, aborting ..."
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$APPLICATION" ]
+then
+    MSG="ERR-005 Application must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ -z "$VERSION" ]
+then
+    MSG="ERR-005 Version must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+MSG="MSG-005 All parameters received" && log "$MSG"
+
+###################################
+#    CONFIGURACION PATH DE TRABAJO
+###################################
+BASEDIR=$DIR_WORK_TEMP/$APPLICATION-$VERSION
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+[ -d $BASEDIR ] && {
+    log "$BASEDIR exists ..."
+    rm -fr $BASEDIR || { log "Error deleting dir $BASEDIR"; exit 1; }
+    log "Dir $BASEDIR deleted"
+} || log "$BASEDIR does not exist"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+if [ ! -d "$BASEDIR" ]; then
+    # El directorio de trabajo no existe
+    mkdir -p $BASEDIR || { log "Can not create $BASEDIR"; exit 1; }
+    log "Dir $BASEDIR created"
+fi
+
+#####################################
+# CAMBIAMOS AL DIRECTORIO DE TRABAJO
+#####################################
+cd $BASEDIR
+
+#################################################################################
+# CONSULTAMOS A PDS, OBTENEMOS Y DESCOMPRIMIMOS EL COMPONENTE DE INFRAESTRUCTURA
+#################################################################################
+# log "URL ---> $PROTOCOL_PDS://$HOST_PDS:$PORT_PDS$END_POINT_PDS_GET_ARTIFACTS_VERSIONS/$APPLICATION/$VERSION/"
+# ARTIFACTS_VERSIONS=`curl -s $PROTOCOL_PDS://$HOST_PDS:$PORT_PDS$END_POINT_PDS_GET_ARTIFACTS_VERSIONS/$APPLICATION/$VERSION/`
+# log "ARTIFACTS_VERSIONS=$ARTIFACTS_VERSIONS"
+# echo $ARTIFACTS_VERSIONS | grep "doesn't exist" && {
+#     MSG="ERR-010 Application/Version $APPLICATION/$VERSION doesn't exist in PDS!"
+#     log "$MSG"
+#     exit 1
+# }
+
+# FILEPOM="$DIR_BASE/maven/$APPLICATION.xml"
+FILE_MANIFEST="$DIR_BASE/maven/$APPLICATION-deployit-manifest.xml"
+
+# [ -f $FILEPOM ] || {
+#     MSG="ERR-015 File $FILEPOM doesn't exist"
+#     log "$MSG"
+#     exit 1
+# }
+
+[ -f $FILE_MANIFEST ] || {
+    MSG="ERR-015 File $FILE_MANIFEST doesn't exist"
+    log "$MSG"
+    exit 1
+}
+
+
+#######################################################################################
+# AHORA COPIAMOS EL FICHERO ORIGINAL AL DIRECTORIO TEMPORAL EN EL QUE SERA SUSTITUIDO #
+#######################################################################################
+# log "Copying new pom file ..."
+# cp $FILEPOM $BASEDIR/pom.xml
+# log "Updating version in pom.xml ..."
+# sed "s/VERSION_DAR/$VERSION/g" -i pom.xml
+
+log "Copying new manifest file ..."
+cp $FILE_MANIFEST $BASEDIR/deployit-manifest.xml
+log "Updating version in manifest.xml ..."
+sed "s/VERSION_DAR/$VERSION/g" -i deployit-manifest.xml
+
+######################################################################
+# DEPENDIENDO DE LA APLICACIÓN INVOCAMOS DE UNA U OTRA FORMA A MAVEN #
+######################################################################
+case "$APPLICATION" in
+congruencias)
+    SCHEMABDD_VERSION=`wget -O - -o /dev/null http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/schemabdd/maven-metadata.xml | grep -Po '(?<=<version>)([0-9\.\-B]+(-SNAPSHOT)?)' | sort --version-sort -r | head -n 1`
+    WEBAPP_VERSION=`wget -O - -o /dev/null http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/webapp/maven-metadata.xml | grep -Po '(?<=<version>)([0-9\.\-B]+(-SNAPSHOT)?)' | sort --version-sort -r | head -n 1`
+    log "SCHEMABDD_VERSION = $SCHEMABDD_VERSION"
+    log "WEBAPP_VERSION = $WEBAPP_VERSION"
+    wget http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/schemabdd/$SCHEMABDD_VERSION/schemabdd-$SCHEMABDD_VERSION.zip
+    wget http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/webapp/$WEBAPP_VERSION/webapp-$WEBAPP_VERSION.war
+    sed "s/SCHEMABDD_VERSION/$SCHEMABDD_VERSION/g" -i deployit-manifest.xml
+    sed "s/WEBAPP_VERSION/$WEBAPP_VERSION/g" -i deployit-manifest.xml
+    # mvn clean package deployit:import -Djavax.net.ssl.trustStore=/home/jcla/Certs/keystore.jks \
+    # -Dcom.xebialabs.congruencias.schemabdd.version=$SCHEMABDD_VERSION \
+    # -Dcom.xebialabs.congruencias.webapp.version=$WEBAPP_VERSION
+    ;;
+front)
+    SCHEMABDD_VERSION=`wget -O - -o /dev/null http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/schemabdd/maven-metadata.xml | grep -Po '(?<=<version>)([0-9\.\-B]+(-SNAPSHOT)?)' | sort --version-sort -r | head -n 1`
+    WEBAPP_VERSION=`wget -O - -o /dev/null http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/webapp/maven-metadata.xml | grep -Po '(?<=<version>)([0-9\.\-B]+(-SNAPSHOT)?)' | sort --version-sort -r | head -n 1`
+    TUTORIAL_VERSION=`wget -O - -o /dev/null http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/tutorial/maven-metadata.xml | grep -Po '(?<=<version>)([0-9\.\-B]+(-SNAPSHOT)?)' | sort --version-sort -r | head -n 1`
+    log "SCHEMABDD_VERSION = $SCHEMABDD_VERSION"
+    log "WEBAPP_VERSION = $WEBAPP_VERSION"
+    log "TUTORIAL_VERSION = $TUTORIAL_VERSION"
+    wget http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/schemabdd/$SCHEMABDD_VERSION/schemabdd-$SCHEMABDD_VERSION.zip
+    wget http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/webapp/$WEBAPP_VERSION/webapp-$WEBAPP_VERSION.war
+    wget http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/tutorial/$TUTORIAL_VERSION/tutorial-$TUTORIAL_VERSION.zip
+    sed "s/SCHEMABDD_VERSION/$SCHEMABDD_VERSION/g" -i deployit-manifest.xml
+    sed "s/WEBAPP_VERSION/$WEBAPP_VERSION/g" -i deployit-manifest.xml
+    sed "s/TUTORIAL_VERSION/$TUTORIAL_VERSION/g" -i deployit-manifest.xml
+    VERSION_WS_DEPENDENCY=`echo $VERSION | awk -F-B '{ print $1 }'`
+    sed "s/VERSION_WS_DEPENDENCY/$VERSION_WS_DEPENDENCY/g" -i deployit-manifest.xml
+    # mvn clean package deployit:import -Djavax.net.ssl.trustStore=/home/jcla/Certs/keystore.jks \
+    # -Dcom.xebialabs.congruencias.schemabdd.version=$SCHEMABDD_VERSION \
+    # -Dcom.xebialabs.congruencias.webapp.version=$WEBAPP_VERSION
+    ;;
+webservices)
+    WEBSERVICES_VERSION=`wget -O - -o /dev/null http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/webservices/maven-metadata.xml | grep -Po '(?<=<version>)([0-9\.\-B]+(-SNAPSHOT)?)' | sort --version-sort -r | head -n 1`
+    log "WEBSERVICES_VERSION = $WEBSERVICES_VERSION"
+    wget http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/webservices/$WEBSERVICES_VERSION/webservices-$WEBSERVICES_VERSION.aar
+    sed "s/WEBSERVICES_VERSION/$WEBSERVICES_VERSION/g" -i deployit-manifest.xml
+    ;;
+congruencias-websphere)
+    WEBAPP_VERSION=`wget -O - -o /dev/null http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/webapp/maven-metadata.xml | grep -Po '(?<=<version>)([0-9\.\-B]+(-SNAPSHOT)?)' | sort --version-sort -r | head -n 1`
+    log "WEBAPP_VERSION = $WEBAPP_VERSION"
+    wget http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/webapp/$WEBAPP_VERSION/webapp-$WEBAPP_VERSION.war
+    sed "s/WEBAPP_VERSION/$WEBAPP_VERSION/g" -i deployit-manifest.xml
+    ;;
+tutorial)
+    TUTORIAL_VERSION=`wget -O - -o /dev/null http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/tutorial/maven-metadata.xml | grep -Po '(?<=<version>)([0-9\.\-B]+(-SNAPSHOT)?)' | sort --version-sort -r | head -n 1`
+    log "TUTORIAL_VERSION = $TUTORIAL_VERSION"
+    wget http://localhost:8081/repository/maven-releases/com/xebialabs/congruencias/tutorial/$TUTORIAL_VERSION/tutorial-$TUTORIAL_VERSION.zip; unzip tutorial-$TUTORIAL_VERSION.zip; rm tutorial-$TUTORIAL_VERSION.zip
+    sed "s/TUTORIAL_VERSION/$TUTORIAL_VERSION/g" -i deployit-manifest.xml
+    ;;
+*)
+   ;;
+esac
+
+DAR_FILE=$APPLICATION-$VERSION.dar
+jar cf $DAR_FILE *
+curl -u admin:2001jcla -X POST -H "content-type:multipart/form-data" http://localhost:4516/deployit/package/upload/$DAR_FILE -F fileData=@$DAR_FILE
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+exit 0

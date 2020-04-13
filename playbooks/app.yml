@@ -1,0 +1,23 @@
+---
+
+- hosts: localhost
+  connection: local
+  tasks:
+  - name: Obtenemos las versiones de los artefactos a desplegar
+    uri:
+      url: "{{ url_get_artifacts_versions }}/{{ application }}/{{ version }}/"
+      return_content: yes
+    register: artifacts_versions
+    
+- hosts: localhost
+  connection: local
+  roles:
+  - { role: download-artifact-nexus, groupId: vocento.ansible, artifactId: "{{ application }}", artifact_version: "{{ artifacts_versions.json['vocento.ansible:playbook'] }}", extension: zip }
+  - { role: deploy-local-artifact, vars_file: "/etc/ansible/roles/deploy-local-artifact/vars/localhost.yml", groupId: vocento.ansible, artifactId: "{{ application }}", artifact_version: "{{ artifacts_versions.json['vocento.ansible:playbook'] }}", extension: zip }
+
+- include: "/etc/ansible/playbooks/{{ application }}/{{ application }}.yml"
+
+- hosts: localhost
+  connection: local
+  roles:
+    - { role: update-maturity-level, entorno: "{{ entorno }}", application: "{{ application }}", version: "{{ version }}" }

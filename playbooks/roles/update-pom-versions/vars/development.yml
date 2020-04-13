@@ -1,0 +1,5 @@
+---
+dir_base: /opt/xebialabs/devops-utilities
+dir_work: /var/opt/xebialabs
+dir_log: /var/log/xebialabs
+git_command: /usr/bin/git

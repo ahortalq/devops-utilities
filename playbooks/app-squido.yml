@@ -1,0 +1,14 @@
+---
+
+- hosts: localhost
+  connection: local
+  tasks:
+  - name: Se realiza el despliegue obteniendo los datos de Nexus
+    debug:
+      msg: "Despliegue realizado"
+
+- hosts: localhost
+  connection: local
+  roles:
+    - { role: update-maturity-level, entorno: "{{ entorno }}", application: "{{ application }}", version: "{{ version }}" }
+

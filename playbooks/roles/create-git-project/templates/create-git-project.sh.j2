@@ -1,0 +1,104 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=CRGPR
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/create-git-project.cfg
+
+#########################
+# THE COMMAND LINE HELP #
+#########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -s slug Git"
+    echo
+}
+
+###############################
+# FUNCIONES
+###############################
+
+###############################
+# 1.- PARA ESCRIBIR LOGS
+###############################
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> "$PROGCODE" "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":s:" opt; do
+    case $opt in
+        s)
+            log "Recibido el slug git ... -s was triggered, Parameter: $OPTARG"
+            sluggit=$OPTARG
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, interrumpimos el proceso"
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, interrumpimos el proceso"
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$sluggit" ]
+then
+    MSG="ERR-005 Slug Git must be provided"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+MSG="MSG-005 Se han recibido todos los parametros requeridos" && log "$MSG"
+
+#####################################################################
+# CALCULAMOS EL REPOSITORIO GIT UTILIZANDO LOS PARAMETROS OBTENIDOS #
+#####################################################################
+repositoriogit="$SSH_BITBUCKET/$PROJECT_BITBUCKET/$sluggit.git"
+log "Repositorio Git calculado: $repositoriogit"
+
+########################################
+# CREACION DE UN PROYECTO EN BITBUCKET #
+########################################
+log "MSG-100 Creacion de un nuevo proyecto para BitBucket"
+URL_CREATE_PROJECT="$PROTOCOL_BITBUCKET://$HOST_BITBUCKET:$PORT_BITBUCKET/rest/api/latest/projects/$PROJECT_BITBUCKET/repos?create"
+log "URL_CREATE_PROJECT=$URL_CREATE_PROJECT"
+log "MSG-102 Invocamos al API-REST para crear el repositorio"
+http_return_code=`curl -s -o /dev/null -w "%{http_code}" -u $USER_BITBUCKET:$PASSWORD_BITBUCKET -H 'Content-Type: application/json' -X POST \
+    -d '{"name": "'$sluggit'"}' \
+    $URL_CREATE_PROJECT`
+log "MSG-103 Código de retorno obtenido = $http_return_code"
+if [ "$http_return_code" = "201" ]
+then
+    log "MSG-105 Proyecto creado en BitBucket de forma correcta"
+else
+    log "ERR-100 No ha sido posible crear el proyecto en BitBucket"
+    exit 1
+fi
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+exit 0

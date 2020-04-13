@@ -1,0 +1,258 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+PROGCODE=DELAV
+
+start_time=$(date +%s)
+
+# Cargamos las variables de entorno
+. {{ dir_base }}/delete-artifact-version.cfg
+
+#########################
+# THE COMMAND LINE HELP #
+#########################
+display_help() {
+    echo
+    echo "Usage: $0 [option...]"
+    echo
+    echo "   -g repositorio Git"
+    echo "   -q GroupId"
+    echo "   -a ArtifactId"
+    echo "   -v versión del artefacto a eliminar"
+    echo "   -o objectId del artefacto a eliminar (Nexus3)"
+    echo
+}
+
+###############################
+# FUNCIONES
+###############################
+
+###############################
+# 1.- PARA ESCRIBIR LOGS
+###############################
+log(){
+    NOW=$(date +"%Y-%m-%d-%H:%M:%S")
+    message="$@"
+    echo $NOW" -> DELAV "$message >> $LOG
+    # Lanzamos tambien el mensaje por pantalla para Jenkins
+    echo $NOW" -> "$message
+}
+#############################################################################################
+# 2.- PARA OBTENER EL NOMBRE DEL PROGRAMA Y LA LINEA EN QUE SE PRODUJO EL ERROR
+#############################################################################################
+function error_exit
+{
+    log "${PROGNAME}: ${1:-"Unknown Error"}"
+    exit 1
+}
+
+log "---------------------------------------------------------------"
+MSG="MSG-000 Se inicia la ejecucion del programa $PROGNAME"
+log "$MSG"
+
+#####################################################################
+#    COMPROBAMOS QUE RECIBIMOS LOS PARAMETROS NECESARIOS            #
+#####################################################################
+
+while getopts ":g:q:a:v:o:" opt; do
+    case $opt in
+        g)
+            log "Recibido el repositorio git ... -g was triggered, Parameter: $OPTARG"
+            repositoriogit=$OPTARG
+            REPOSITORIOGIT_RECIBIDO="true"
+            ;;
+        q)
+            log "Recibido el GroupId ... -q was triggered, Parameter: $OPTARG"
+            GROUPID=$OPTARG
+            GROUPID_RECIBIDO="true"
+            ;;
+        a)
+            log "Recibido el ArtifactId ... -a was triggered, Parameter: $OPTARG"
+            ARTIFACTID=$OPTARG
+            ARTIFACT_ID_RECIBIDO="true"
+            ;;
+        v)
+            log "Recibida la version del artefacto ... -v was triggered, Parameter: $OPTARG"
+            VERSIONARTIFACTID=$OPTARG
+            VERSION_RECIBIDA="true"
+            ;;
+        o)
+            log "Recibido el objectId del artefacto ... -o was triggered, Parameter: $OPTARG"
+            OBJECTID=$OPTARG
+            OBJECTID_RECIBIDO="true"
+            ;;
+        \?)
+            log "Invalid option: -$OPTARG, interrumpimos el proceso"
+            exit 1
+            ;;
+        :)
+            log "Option -$OPTARG requires an argument, interrumpimos el proceso"
+            exit 1
+           ;;
+    esac
+done
+
+if [ ! "$REPOSITORIOGIT_RECIBIDO" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado el repositorio Git, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$GROUPID_RECIBIDO" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado el groupid, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$ARTIFACT_ID_RECIBIDO" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado el artifact_id , no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$VERSION_RECIBIDA" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado la version, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+if [ ! "$OBJECTID_RECIBIDO" = "true" ]
+then
+    MSG="ERR-005 No se ha facilitado el objectId, no es posible continuar"
+    log "$MSG"
+    display_help
+    exit 1
+fi
+
+#####################################################################
+#    HEMOS RECIBIDO LOS PARAMETROS NECESARIOS                       #
+#####################################################################
+
+MSG="MSG-005 Se han recibido todos los parametros requeridos" && log "$MSG"
+
+#####################################################################
+#    CONFIGURACION PATH DE TRABAJO PARA DESCARGA DEL PROYECTO GIT
+#####################################################################
+
+# VALOR DE EJEMPLO (por defecto)
+# /var/opt/vocento/delete-artifact-version/empty-web-lib
+BASEDIR=$DIR_WORK_TEMP/$artifactid
+
+#############################################
+# ELIMINAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+
+[ -d $BASEDIR ] && {
+    log "Existe el directorio de trabajo $BASEDIR"
+    rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR eliminado"
+} || log "No existe el directorio de trabajo $BASEDIR"
+
+#############################################
+# CREAMOS EL DIRECTORIO DE TRABAJO
+#############################################
+
+if [ ! -d "$BASEDIR" ]; then
+    # El directorio de trabajo no existe
+    mkdir -p $BASEDIR || { log "No se ha podido crear el directorio de trabajo $BASEDIR"; exit 1; }
+    log "Directorio de trabajo $BASEDIR creado"
+fi
+
+################################################################
+# DESCARGAMOS COPIA DE GIT EN EL DIRECTORIO CREADO
+################################################################
+
+cd $BASEDIR
+# Obtenemos una copia de trabajo
+REPO_GIT=$repositoriogit
+log "Clonamos el repositorio $REPO_GIT"
+$GIT_COMMAND clone $REPO_GIT >> $LOG 2>>$LOG
+
+################################################################
+# VERIFICAMOS QUE SE HA CLONADO CORRECTAMENTE EL REPOSITORIO
+################################################################
+DIR_CREADO=`ls -F | grep '/$'`
+[ -d $DIR_CREADO/.git ] || {
+    MSG="ERR-010 No existe el directorio $DIR_CREADO/.git, no se ha clonado correctamente el repositorio"
+    log "$MSG"
+    exit 1
+}
+
+MSG="MSG-010 Repositorio Git clonado correctamente" && log "$MSG"
+
+log "Cambiamos al directorio con el respositorio git clonado: cd $DIR_CREADO"
+cd $DIR_CREADO
+
+############################
+# ELIMINAMOS EL TAG CREADO #
+############################
+log "Eliminamos el tag $VERSIONARTIFACTID"
+$GIT_COMMAND tag -d $VERSIONARTIFACTID >> $LOG 2>>$LOG
+$GIT_COMMAND push origin :refs/tags/$VERSIONARTIFACTID >> $LOG 2>>$LOG
+
+########################################################
+# ELIMINAMOS EL ARTEFACTO CREADO EN NEXUS              #
+########################################################
+log "Eliminamos el artefacto de Nexus"
+
+##################################################################################
+# ES NECESARIO ADECUAR EL GROUPID PARA HACER LA CONSULTA AL API-REST DE NEXUS
+##################################################################################
+GROUPID_NEXUS=$(echo $GROUPID | sed s/\\./\\//g)
+log "GroupId calculado para Nexus = $GROUPID_NEXUS"
+
+#################################
+# INVOCAMOS AL API-REST DE NEXUS
+#################################
+MSG="MSG-025 Invocamos al API-REST"
+if [ "$NEXUS_VERSION" = "2" ]
+then
+    log "Tratamos Nexus en version 2"
+    curl --request DELETE --user "$USER_NEXUS:$PASSWORD_NEXUS" $PROTOCOL_NEXUS://$HOST_NEXUS:$PORT_NEXUS$URL_NEXUS_REPOSITORY/$GROUPID_NEXUS/$ARTIFACTID/$VERSIONARTIFACTID || {
+        MSG="ERR-020 No ha sido posible eliminar el artefacto en Nexus"
+        log "$MSG"
+        exit 1
+    }
+elif [ "$NEXUS_VERSION" = "3" ]
+then
+    log "Tratamos Nexus en version 3"
+    curl -u "$USER_NEXUS:$PASSWORD_NEXUS" -H 'Content-Type: application/json' -X POST \
+        -d '{"action": "coreui_Component", "method": "deleteComponent", "type": "rpc", "tid": 52, "data": ["'$OBJECTID'", "'$URL_NEXUS_REPOSITORY_V3'"]}' \
+        $PROTOCOL_NEXUS://$HOST_NEXUS:$PORT_NEXUS/service/extdirect || {
+            MSG="ERR-020 No ha sido posible eliminar el artefacto en Nexus"
+            log "$MSG"
+            exit 1
+        }
+else
+    log "ERR-025 Version de Nexus no reconocida"
+fi
+
+MSG="MSG-030 Artefacto eliminado de Nexus"
+log "$MSG"
+
+########################################################
+# ELIMINAMOS DIRECTORIOS TEMPORALES Y FINALIZAMOS      #
+########################################################
+log "Eliminamos directorio temporal de trabajo $BASEDIR"
+[ -d $BASEDIR ] && {
+        log "Existe el directorio de trabajo $BASEDIR"
+        rm -fr $BASEDIR || { log "No se ha podido eliminar el directorio de trabajo $BASEDIR"; exit 1; }
+        log "Directorio de trabajo $BASEDIR eliminado"
+}
+
+MSG="MSG-035 Versión del artefacto eliminada de forma correcta"
+log "$MSG"
+
+finish_time=$(date +%s)
+
+log "Time duration: $((finish_time - start_time)) secs."
+
+exit 0
